@@ -1,5 +1,7 @@
 # DeepseekAPP
 
+A simple app to use Deepseek by key,even I still do not understand why not Deepseek official support it.
+
 一个用 **API Key** 直接调用 DeepSeek 官方接口的安卓客户端。原生 Kotlin + Jetpack Compose 编写,没有中转服务器,Key 只保存在你自己的手机上。
 
 > 非官方项目,与 DeepSeek 公司无关。
