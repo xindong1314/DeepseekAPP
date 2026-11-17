@@ -1,0 +1,18 @@
+# Gradle / Kotlin 构建产物
+.gradle/
+.kotlin/
+build/
+*.log
+
+# 本机路径与 IDE 配置
+local.properties
+.idea/
+*.iml
+
+# 打包出来的 APK(体积大、可随时重新编译)
+*.apk
+*.aab
+
+# 签名密钥
+*.jks
+*.keystore
