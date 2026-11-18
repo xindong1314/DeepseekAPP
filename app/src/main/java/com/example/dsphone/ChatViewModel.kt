@@ -48,7 +48,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** 查询账户余额(只读接口,不产生费用) */
     fun refreshBalance() {
         val key = s.apiKey
-        if (key.isBlank()) { balance = null; balanceError = null; return }
+        if (s.isCustom || key.isBlank()) { balance = null; balanceError = null; return }
         viewModelScope.launch {
             balanceLoading = true
             try { balance = Api.balance(key); balanceError = null }
@@ -61,7 +61,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** 抽屉里用的简短余额文字,如 ¥110.00 */
     val balanceShort: String? get() = balance?.items?.firstOrNull()?.let { it.symbol + it.total }
 
-    val info get() = Models.byId(s.model)
+    val info get() = if (s.isCustom) Models.custom(s.customModel) else Models.byId(s.model)
     val total get() = convs.filter { it !== cur }.sumOf { it.cost } + cur.cost
 
     fun toast(t: String) { toastMsg = t }
@@ -136,6 +136,22 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun stop() { job?.cancel() }
 
     // ---------------- 设置 ----------------
+    fun setCustomModel(id: String) { s.customModel = id; s.save() }
+
+    var customModels by mutableStateOf<List<String>>(emptyList())
+    var customModelsStatus by mutableStateOf("")
+    fun loadCustomModels() {
+        if (s.customKey.isBlank()) { customModelsStatus = "请先填写 API Key"; return }
+        viewModelScope.launch {
+            customModelsStatus = "获取中…"
+            try {
+                customModels = Api.listModels(s.activeBase, s.customKey)
+                customModelsStatus = if (customModels.isEmpty()) "接口没有返回模型" else ""
+            } catch (e: CancellationException) { throw e
+            } catch (e: Exception) { customModelsStatus = "获取失败:${e.message}" }
+        }
+    }
+
     fun setModel(id: String) {
         s.model = id
         if (!Models.byId(id).serverWeb && s.web) toast("已切到 Pro:联网改由手机端调用搜索/抓取接口")
@@ -173,6 +189,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------------- 语音输入 ----------------
     fun transcribe(wav: File) {
+        if (s.isCustom) { error = "语音输入目前只支持 DeepSeek 官方接口"; wav.delete(); return }
         if (s.apiKey.isBlank()) { error = "请先在设置里填写 API Key"; return }
         viewModelScope.launch {
             transcribing = true
@@ -196,7 +213,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val text = input.trim()
         if (text.isEmpty() && pending.isEmpty()) return
         if (busy) return
-        if (s.apiKey.isBlank()) { error = "请先在设置里填写 API Key"; return }
+        if (s.activeKey.isBlank()) { error = "请先在设置里填写 API Key"; return }
+        if (s.isCustom && s.customModel.isBlank()) { error = "请先在设置里选择或填写模型名"; return }
         val um = Msg("user", text)
         um.attachments.addAll(pending); pending.clear()
         um.asrSec = asrSec; um.asrCost = asrCost; asrSec = 0; asrCost = 0.0
@@ -209,10 +227,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private fun generate() {
         val model = info
         val conv = cur
-        val web = s.web
-        val thinking = s.think
+        val custom = s.isCustom
+        val web = s.web && !custom
+        val thinking = s.think && !custom
         val effort = s.effort
-        val key = s.apiKey
+        val key = s.activeKey
+        val base = s.activeBase
         job = viewModelScope.launch {
             busy = true
             val m = Msg("assistant", "", if (thinking) "" else null)
@@ -240,6 +260,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
                 fun body(withTools: Boolean): JSONObject {
                     val b = JSONObject().put("model", model.id).put("messages", msgs).put("stream", true)
+                    if (custom) {
+                        b.put("stream_options", JSONObject().put("include_usage", true))
+                        return b
+                    }
                     if (thinking) b.put("thinking", JSONObject().put("type", "enabled")).put("reasoning_effort", effort)
                     else b.put("thinking", JSONObject().put("type", "disabled"))
                     if (serverWeb) b.put("tools", JSONArray().put(JSONObject().put("type", "deepseek_web_search")).put(JSONObject().put("type", "deepseek_read_url")))
@@ -248,7 +272,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 }
 
                 if (!clientWeb) {
-                    val res = Api.chatStream(key, body(false), onR, onC, onS)
+                    val res = Api.chatStream(base, key, body(false), onR, onC, onS, if (custom) "dsphone-${conv.id}" else null)
                     usage.add(res.usage)
                     if (serverWeb) {
                         sources.addAll(sourcesOf(res.serverCalls))
@@ -263,7 +287,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         return sources.size
                     }
                     for (round in 0 until 6) {
-                        val res = Api.chatStream(key, body(round < 5), onR, onC, onS)
+                        val res = Api.chatStream(base, key, body(round < 5), onR, onC, onS)
                         usage.add(res.usage)
                         if (res.toolCalls.isEmpty()) break
                         val am = JSONObject().put("role", "assistant").put("content", res.content.toString())
@@ -330,14 +354,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             if (m.reasoning != null && m.thinkSec == null && !m.reasoning.isNullOrEmpty())
                 m.thinkSec = 1
             val peak = Cost.isPeak()
-            val cost = Cost.tokens(model, usage, peak) + usage.search * Cost.SEARCH + usage.fetch * Cost.FETCH + ocrPages * Cost.OCR_PAGE
+            val cost = if (model.custom) 0.0 else Cost.tokens(model, usage, peak) + usage.search * Cost.SEARCH + usage.fetch * Cost.FETCH + ocrPages * Cost.OCR_PAGE
             m.cost = cost
             m.costText = buildString {
-                append(Cost.yuan(cost)).append(" · 输入 ${usage.hit + usage.miss}(缓存 ${usage.hit}) 输出 ${usage.out}")
+                if (!model.custom) append(Cost.yuan(cost)).append(" · ")
+                append("输入 ${usage.hit + usage.miss}(缓存 ${usage.hit}) 输出 ${usage.out}")
                 if (usage.search > 0) append(" · 搜索 ${usage.search} 次")
                 if (usage.fetch > 0) append(" · 抓取 ${usage.fetch} 次")
                 if (ocrPages > 0) append(" · OCR/解析 $ocrPages 页")
-                append(if (peak) " · 高峰价" else " · 空闲价")
+                if (!model.custom) append(if (peak) " · 高峰价" else " · 空闲价")
             }
             conv.cost += cost
             if (s.speak && m.content != "(已停止)") speakRequest = m.content
@@ -354,6 +379,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun prepare(key: String, a: Attach, model: ModelInfo, m: Msg): Int {
         val f = File(a.path)
         var pages = 0
+        if (model.custom) return 0   // 自定义服务商没有文件解析 / OCR 接口
         try {
             if (a.kind == "doc" && model.vision && a.fileId == null) {
                 m.status = "📄 正在解析 ${a.name}…"
@@ -388,7 +414,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     "image" -> if (model.vision)
                         blocks.put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", Media.dataUrl(a.path))))
                     else texts.append("【图片「${a.name}」的识别文字】\n${a.ocrText}\n\n")
-                    "doc" -> if (model.vision)
+                    "doc" -> if (model.custom) texts.append("【文档「${a.name}」未发送:当前服务商不支持文件解析】\n\n")
+                    else if (model.vision)
                         blocks.put(JSONObject().put("type", "file").put("file_id", a.fileId))
                     else texts.append("【文档「${a.name}」的内容】\n${a.ocrText}\n\n")
                     "text" -> texts.append("【文件「${a.name}」】\n${Media.readText(a.path)}\n\n")

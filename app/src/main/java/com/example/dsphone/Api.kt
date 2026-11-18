@@ -42,7 +42,8 @@ const val TOPUP_URL = "https://platform.deepseek.com/top_up"
 
 /** DeepSeek 官方接口封装(全部来自官方文档) */
 object Api {
-    private const val BASE = "https://api.deepseek.com"
+    const val DEEPSEEK_BASE = "https://api.deepseek.com"
+    private const val BASE = DEEPSEEK_BASE
     private val JSON = "application/json".toMediaType()
     val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -63,14 +64,17 @@ object Api {
 
     // ---------------- 对话(流式) ----------------
     suspend fun chatStream(
+        base: String,
         key: String,
         body: JSONObject,
         onReasoning: (String) -> Unit,
         onContent: (String) -> Unit,
         onStatus: (String) -> Unit,
+        session: String? = null,   // 自定义服务商:稳定的会话 ID(OpenCode 要求 x-opencode-session)
     ): StreamResult = withContext(Dispatchers.IO) {
-        val req = Request.Builder().url("$BASE/chat/completions")
+        val req = Request.Builder().url("$base/chat/completions")
             .header("Authorization", "Bearer $key")
+            .apply { if (session != null) header("x-opencode-session", session).header("User-Agent", "DeepseekAPP/1.2.0") }
             .post(body.toString().toRequestBody(JSON)).build()
         val call = http.newCall(req)
         val handle = currentCoroutineContext()[Job]?.invokeOnCompletion { call.cancel() }
@@ -100,8 +104,14 @@ object Api {
     ) {
         if (j.has("error")) throw ApiException(j.getJSONObject("error").optString("message", "流式响应出错"))
         j.optJSONObject("usage")?.let { u ->
-            r.usage.hit = u.optInt("prompt_cache_hit_tokens")
-            r.usage.miss = u.optInt("prompt_cache_miss_tokens")
+            if (u.has("prompt_cache_miss_tokens")) {
+                r.usage.hit = u.optInt("prompt_cache_hit_tokens")
+                r.usage.miss = u.optInt("prompt_cache_miss_tokens")
+            } else {   // OpenAI 兼容格式
+                val cached = u.optJSONObject("prompt_tokens_details")?.optInt("cached_tokens") ?: 0
+                r.usage.hit = cached
+                r.usage.miss = (u.optInt("prompt_tokens") - cached).coerceAtLeast(0)
+            }
             r.usage.out = u.optInt("completion_tokens")
             u.optJSONObject("server_tool_use")?.let {
                 r.usage.search = it.optInt("tool_search")
@@ -207,6 +217,13 @@ object Api {
                 BalanceItem(o.optString("currency"), o.optString("total_balance"), o.optString("granted_balance"), o.optString("topped_up_balance"))
             },
         )
+    }
+
+    // ---------------- 自定义服务商:模型列表 ----------------
+    suspend fun listModels(base: String, key: String): List<String> {
+        val j = exec(Request.Builder().url("$base/models").header("Authorization", "Bearer $key").build())
+        val arr = j.optJSONArray("data") ?: return emptyList()
+        return (0 until arr.length()).map { arr.getJSONObject(it).optString("id") }.filter { it.isNotEmpty() }.sorted()
     }
 
     // ---------------- 搜索 / 抓取(Pro 联网用) ----------------

@@ -133,7 +133,7 @@ fun App(vm: ChatViewModel) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val drawer = rememberDrawerState(DrawerValue.Closed)
-    var showSettings by remember { mutableStateOf(vm.s.apiKey.isBlank()) }
+    var showSettings by remember { mutableStateOf(vm.s.activeKey.isBlank()) }
     var showModels by remember { mutableStateOf(false) }
     val speaker = remember { Speaker(ctx) }
     DisposableEffect(Unit) { onDispose { speaker.shutdown() } }
@@ -388,6 +388,7 @@ fun Dock(vm: ChatViewModel) {
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // 点一下按 关 → 低 → 高 → 最大 循环;按钮形状固定,只变文字和颜色
+                if (!s.isCustom) {
                 Pill(selected = s.think, onClick = { s.cycleEffort() }, icon = Icons.Outlined.Psychology, text = "深度思考",
                     trailing = if (s.think) effortCn(s.effort) else "关")
                 Spacer(Modifier.width(6.dp))
@@ -395,6 +396,7 @@ fun Dock(vm: ChatViewModel) {
                     s.web = !s.web; s.save()
                     if (s.web && !vm.info.serverWeb) vm.toast("Pro 联网:由手机端调用搜索/抓取接口(各 5 元/千次)")
                 }, icon = Icons.Outlined.Language, text = "智能搜索")
+                }
                 Spacer(Modifier.weight(1f))
                 RoundBtn(if (panel) Icons.Outlined.Close else Icons.Outlined.Add, filled = false) { panel = !panel }
                 Spacer(Modifier.width(6.dp))
@@ -579,7 +581,23 @@ fun ModelSheet(vm: ChatViewModel, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color.White) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 28.dp)) {
             Text("选择模型", color = Mut, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp))
-            Models.all.forEach { m ->
+            if (vm.s.isCustom) {
+                LaunchedEffect(Unit) { if (vm.customModels.isEmpty()) vm.loadCustomModels() }
+                if (vm.customModelsStatus.isNotEmpty()) Text(vm.customModelsStatus, fontSize = 13.sp, color = Mut, modifier = Modifier.padding(bottom = 8.dp))
+                Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                    vm.customModels.forEach { id ->
+                        val sel = vm.s.customModel == id
+                        val shape = RoundedCornerShape(14.dp)
+                        Text(
+                            id, fontSize = 16.sp, fontWeight = FontWeight.Medium,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(shape).background(if (sel) PriCont else Color.Transparent)
+                                .border(1.5.dp, if (sel) PriBorder else Color.Transparent, shape)
+                                .clickable { vm.setCustomModel(id); onDismiss() }.padding(12.dp),
+                        )
+                    }
+                }
+                TextButton({ vm.loadCustomModels() }) { Text("重新获取列表") }
+            } else Models.all.forEach { m ->
                 val sel = vm.s.model == m.id
                 val shape = RoundedCornerShape(14.dp)
                 Column(
@@ -659,8 +677,45 @@ fun SettingsPage(vm: ChatViewModel, onBack: () -> Unit) {
             Text("设置", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 4.dp))
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 14.dp).navigationBarsPadding().padding(bottom = 30.dp)) {
-            GroupLabel("账号")
+            GroupLabel("服务商")
             Group {
+                SRow("接口", divider = false) {
+                    Row(Modifier.clip(RoundedCornerShape(10.dp)).background(Grey).padding(3.dp)) {
+                        listOf("deepseek" to "DeepSeek 官方", "custom" to "自定义").forEach { (id, label) ->
+                            Box(
+                                Modifier.clip(RoundedCornerShape(8.dp)).background(if (s.provider == id) Color.White else Color.Transparent)
+                                    .clickable { s.provider = id; s.save(); vm.refreshBalance() }.padding(horizontal = 12.dp, vertical = 6.dp),
+                            ) { Text(label, fontSize = 14.sp, color = if (s.provider == id) Ink else Mut) }
+                        }
+                    }
+                }
+                if (s.isCustom) Note("自定义:任意 OpenAI 兼容接口(如 OpenCode Go)。联网搜索、文件解析/OCR、语音输入、余额和费用估算是 DeepSeek 官方接口专有的功能,在这里不可用;图片会直接发给模型,模型不支持时会报错。")
+            }
+            if (s.isCustom) {
+                GroupLabel("自定义服务商")
+                Group {
+                    SRow("接口地址") {
+                        BasicTextField(
+                            s.customUrl, { s.customUrl = it; s.save() }, Modifier.width(210.dp), singleLine = true, cursorBrush = SolidColor(Pri),
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, color = Ink, textAlign = TextAlign.End),
+                        )
+                    }
+                    SRow("API Key") {
+                        BasicTextField(
+                            s.customKey, { s.customKey = it.trim(); s.save() }, Modifier.width(190.dp), singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(), cursorBrush = SolidColor(Pri),
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, color = Ink, textAlign = TextAlign.End),
+                        )
+                    }
+                    SRow("模型", divider = false, onClick = { showModels = true }) {
+                        ValueText(s.customModel.ifBlank { "点击选择" }); Text("  ›", fontSize = 22.sp, color = Color(0xFFC0C2CA))
+                    }
+                    Note("接口地址填到 /v1 为止(程序会在后面加 /chat/completions 和 /models),默认值是 OpenCode Go 的 OpenAI 兼容地址,若不通请对照官方文档修改。点“模型”可从接口拉取列表。")
+                }
+            }
+
+            if (!s.isCustom) GroupLabel("账号")
+            if (!s.isCustom) Group {
                 SRow("API Key") {
                     BasicTextField(
                         key, { key = it; s.apiKey = it.trim(); s.save() }, Modifier.width(190.dp), singleLine = true,

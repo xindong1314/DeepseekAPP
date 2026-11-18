@@ -110,6 +110,8 @@ class Store(ctx: Context) {
     }
 }
 
+const val DEFAULT_CUSTOM_URL = "https://opencode.ai/inference/go/openai/v1"
+
 class Settings(ctx: Context) {
     private val sp = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
     var apiKey by mutableStateOf(sp.getString("key", "") ?: "")
@@ -123,6 +125,15 @@ class Settings(ctx: Context) {
     var bgDim by mutableIntStateOf(sp.getInt("bgDim", 35))
     var bgVersion by mutableIntStateOf(0)
 
+    // 服务商:deepseek(官方)或 custom(任意 OpenAI 兼容接口,如 OpenCode Go)
+    var provider by mutableStateOf(sp.getString("provider", "deepseek") ?: "deepseek")
+    var customUrl by mutableStateOf(sp.getString("customUrl", DEFAULT_CUSTOM_URL) ?: DEFAULT_CUSTOM_URL)
+    var customKey by mutableStateOf(sp.getString("customKey", "") ?: "")
+    var customModel by mutableStateOf(sp.getString("customModel", "") ?: "")
+    val isCustom get() = provider == "custom"
+    val activeKey get() = if (isCustom) customKey else apiKey
+    val activeBase get() = if (isCustom) customUrl.trim().trimEnd('/') else Api.DEEPSEEK_BASE
+
     /** 思考强度循环:关 → 低 → 高 → 最大 → 关 */
     fun cycleEffort() {
         if (!think) { think = true; effort = "low" }
@@ -133,6 +144,8 @@ class Settings(ctx: Context) {
     fun save() {
         sp.edit().putString("key", apiKey).putString("model", model).putBoolean("think", think)
             .putString("effort", effort).putBoolean("web", web).putBoolean("speak", speak)
-            .putString("bgType", bgType).putInt("bgColor", bgColor).putInt("bgDim", bgDim).apply()
+            .putString("bgType", bgType).putInt("bgColor", bgColor).putInt("bgDim", bgDim)
+            .putString("provider", provider).putString("customUrl", customUrl)
+            .putString("customKey", customKey).putString("customModel", customModel).apply()
     }
 }

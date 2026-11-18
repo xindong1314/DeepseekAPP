@@ -21,6 +21,8 @@ data class ModelInfo(
     val vision: Boolean,
     /** 能否使用服务端联网工具 deepseek_web_search;否则手机端自己调搜索/抓取接口 */
     val serverWeb: Boolean,
+    /** 自定义(OpenAI 兼容)服务商的模型:无价格、不用 DeepSeek 专属接口 */
+    val custom: Boolean = false,
 )
 
 object Models {
@@ -33,7 +35,11 @@ object Models {
         Price(0.15, 0.30), Price(4.5, 9.0), Price(13.5, 27.0), vision = false, serverWeb = false,
     )
     val all = listOf(flash, pro)
-    fun byId(id: String) = all.firstOrNull { it.id == id } ?: flash
+    fun custom(id: String) = ModelInfo(
+        id, id.ifBlank { "未选择模型" }, "自定义服务商的模型",
+        Price(0.0, 0.0), Price(0.0, 0.0), Price(0.0, 0.0), vision = true, serverWeb = false, custom = true,
+    )
+    fun byId(id: String) =all.firstOrNull { it.id == id } ?: flash
 }
 
 data class Usage(
