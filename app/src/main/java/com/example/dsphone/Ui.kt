@@ -342,11 +342,17 @@ fun Dock(vm: ChatViewModel) {
             .navigationBarsPadding().padding(start = 10.dp, end = 10.dp, top = 10.dp),
     ) {
         // 提示条:错误优先,否则显示费用
-        Row(Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        val uri = LocalUriHandler.current
+        val noMoney = vm.error?.contains("HTTP 402") == true   // 余额不足:点提示条直接去充值
+        Row(
+            Modifier.then(if (noMoney) Modifier.clickable { runCatching { uri.openUri(TOPUP_URL) } } else Modifier)
+                .padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Icon(Icons.Outlined.Info, null, Modifier.size(18.dp), tint = if (vm.error != null) Color(0xFFD93025) else Color(0xFF797B87))
             Spacer(Modifier.width(8.dp))
             Text(
-                vm.error ?: "本对话 ${Cost.yuan(vm.cur.cost)} · 累计 ${Cost.yuan(vm.total)} · ${if (Cost.isPeak()) "⏰ 高峰价" else "🌙 空闲价"}",
+                vm.error?.let { it + if (noMoney) "  → 点此去充值" else "" } ?: "本对话 ${Cost.yuan(vm.cur.cost)} · 累计 ${Cost.yuan(vm.total)} · ${if (Cost.isPeak()) "⏰ 高峰价" else "🌙 空闲价"}",
                 fontSize = 13.sp, color = if (vm.error != null) Color(0xFFD93025) else Color(0xFF797B87), lineHeight = 18.sp,
             )
         }
@@ -627,6 +633,10 @@ fun SettingsPage(vm: ChatViewModel, onBack: () -> Unit) {
     val pickBg = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { it?.let(vm::setBackgroundImage) }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { it?.let(vm::exportTo) }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(vm::importFrom) }
+    val uriHandler = LocalUriHandler.current
+    val openTopUp = { runCatching { uriHandler.openUri(TOPUP_URL) }; Unit }
+    // 打开设置页、以及改完 Key 停顿 0.8 秒后,自动查询余额
+    LaunchedEffect(key) { delay(800); vm.refreshBalance() }
     BackHandler(onBack = onBack)
 
     Column(Modifier.fillMaxSize().background(PageBg).pointerInput(Unit) { detectTapGestures { } }.statusBarsPadding()) {
@@ -637,7 +647,7 @@ fun SettingsPage(vm: ChatViewModel, onBack: () -> Unit) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 14.dp).navigationBarsPadding().padding(bottom = 30.dp)) {
             GroupLabel("账号")
             Group {
-                SRow("API Key", divider = false) {
+                SRow("API Key") {
                     BasicTextField(
                         key, { key = it; s.apiKey = it.trim(); s.save() }, Modifier.width(190.dp), singleLine = true,
                         visualTransformation = PasswordVisualTransformation(), cursorBrush = SolidColor(Pri),
@@ -650,7 +660,26 @@ fun SettingsPage(vm: ChatViewModel, onBack: () -> Unit) {
                         },
                     )
                 }
-                Note("Key 只保存在本机应用的私有目录,修改后自动保存。")
+                val bal = vm.balance
+                SRow(
+                    "账户余额",
+                    sub = when {
+                        s.apiKey.isBlank() -> "填写 API Key 后显示"
+                        vm.balanceLoading -> "查询中…"
+                        vm.balanceError != null -> "查询失败:${vm.balanceError}(点击重试)"
+                        bal == null -> "点击查询"
+                        bal.items.isEmpty() -> "未返回余额信息"
+                        else -> bal.items.joinToString(" · ") { "赠金 ${it.symbol}${it.granted} / 充值 ${it.symbol}${it.toppedUp}" } + "(点击刷新)"
+                    },
+                    onClick = { vm.refreshBalance() },
+                ) {
+                    if (bal != null && bal.items.isNotEmpty())
+                        Text(bal.items.joinToString(" / ") { it.symbol + it.total }, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = if (bal.available) Ink else Color(0xFFD93025))
+                }
+                SRow("去充值", "跳转官方充值页,支付不经过本应用", divider = false, onClick = { openTopUp() }) {
+                    Text("›", fontSize = 22.sp, color = Color(0xFFC0C2CA))
+                }
+                Note("Key 只保存在本机应用的私有目录,修改后自动保存。官方没有开放充值接口,充值需在网页完成。")
             }
 
             GroupLabel("通用")
@@ -747,7 +776,10 @@ fun HistoryDrawer(vm: ChatViewModel, onClose: () -> Unit, onSettings: () -> Unit
             }
             HorizontalDivider(Modifier.padding(horizontal = 18.dp), color = LineC)
             Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(18.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("累计 ${Cost.yuan(vm.total)}", fontSize = 13.sp, color = Mut, modifier = Modifier.weight(1f))
+                Text(
+                    "累计 ${Cost.yuan(vm.total)}" + (vm.balanceShort?.let { "  ·  余额 $it" } ?: ""),
+                    fontSize = 13.sp, color = Mut, modifier = Modifier.weight(1f),
+                )
                 FilledTonalButton(onSettings, colors = ButtonDefaults.filledTonalButtonColors(containerColor = Grey, contentColor = Ink)) { Text("设置") }
             }
         }

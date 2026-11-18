@@ -31,6 +31,15 @@ class StreamResult {
 
 data class Hit(val title: String, val url: String, val summary: String)
 
+/** 账户余额(GET /user/balance)。字段均为字符串,如 "110.00" */
+data class BalanceItem(val currency: String, val total: String, val granted: String, val toppedUp: String) {
+    val symbol get() = if (currency == "USD") "$" else "¥"
+}
+data class Balance(val available: Boolean, val items: List<BalanceItem>)
+
+/** 官方没有公开的充值接口,充值只能在官方网页完成(文档「402 余额不足」一条给出的地址) */
+const val TOPUP_URL = "https://platform.deepseek.com/top_up"
+
 /** DeepSeek 官方接口封装(全部来自官方文档) */
 object Api {
     private const val BASE = "https://api.deepseek.com"
@@ -185,6 +194,19 @@ object Api {
     suspend fun uploadFile(key: String, f: File, name: String, mime: String): String {
         val j = postForm(key, "/files", "text_recognition", f, name, mime)
         return j.getString("id")
+    }
+
+    // ---------------- 查询余额 ----------------
+    suspend fun balance(key: String): Balance {
+        val j = exec(Request.Builder().url("$BASE/user/balance").header("Authorization", "Bearer $key").build())
+        val arr = j.optJSONArray("balance_infos") ?: JSONArray()
+        return Balance(
+            j.optBoolean("is_available"),
+            (0 until arr.length()).map {
+                val o = arr.getJSONObject(it)
+                BalanceItem(o.optString("currency"), o.optString("total_balance"), o.optString("granted_balance"), o.optString("topped_up_balance"))
+            },
+        )
     }
 
     // ---------------- 搜索 / 抓取(Pro 联网用) ----------------

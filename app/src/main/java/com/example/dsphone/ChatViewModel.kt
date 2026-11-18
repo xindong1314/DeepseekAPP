@@ -39,7 +39,27 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private var asrCost = 0.0
     private var job: Job? = null
 
-    init { convs.addAll(store.loadAll()) }
+    var balance by mutableStateOf<Balance?>(null)
+    var balanceError by mutableStateOf<String?>(null)
+    var balanceLoading by mutableStateOf(false)
+
+    init { convs.addAll(store.loadAll()); refreshBalance() }
+
+    /** 查询账户余额(只读接口,不产生费用) */
+    fun refreshBalance() {
+        val key = s.apiKey
+        if (key.isBlank()) { balance = null; balanceError = null; return }
+        viewModelScope.launch {
+            balanceLoading = true
+            try { balance = Api.balance(key); balanceError = null }
+            catch (e: CancellationException) { throw e }
+            catch (e: Exception) { balance = null; balanceError = e.message ?: "查询失败" }
+            finally { balanceLoading = false }
+        }
+    }
+
+    /** 抽屉里用的简短余额文字,如 ¥110.00 */
+    val balanceShort: String? get() = balance?.items?.firstOrNull()?.let { it.symbol + it.total }
 
     val info get() = Models.byId(s.model)
     val total get() = convs.filter { it !== cur }.sumOf { it.cost } + cur.cost
@@ -323,6 +343,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (conv.msgs.isNotEmpty() && convs.none { it === conv }) convs.add(0, conv)
         store.save(conv)
         busy = false
+        refreshBalance()   // 一轮结束后刷新余额
     }
 
     // ---------------- 附件预处理 ----------------
