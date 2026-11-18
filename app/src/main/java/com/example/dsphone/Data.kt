@@ -75,15 +75,16 @@ class Conv(val id: Long) {
     var cost by mutableDoubleStateOf(0.0)
     var updated by mutableLongStateOf(System.currentTimeMillis())
     var srcId = ""   // 导入时记录官方会话 UUID,用于重复导入去重
+    var pinned by mutableStateOf(false)
     val msgs = mutableStateListOf<Msg>()
 
-    fun toJson(): JSONObject = JSONObject().put("id", id).put("title", title).put("cost", cost).put("updated", updated).put("srcId", srcId)
+    fun toJson(): JSONObject = JSONObject().put("id", id).put("title", title).put("cost", cost).put("updated", updated).put("srcId", srcId).put("pinned", pinned)
         .put("msgs", JSONArray().also { a -> msgs.forEach { a.put(it.toJson()) } })
 
     companion object {
         fun from(j: JSONObject) = Conv(j.getLong("id")).apply {
             title = j.optString("title"); cost = j.optDouble("cost", 0.0); updated = j.optLong("updated")
-            srcId = j.optString("srcId")
+            srcId = j.optString("srcId"); pinned = j.optBoolean("pinned", false)
             val a = j.getJSONArray("msgs")
             for (i in 0 until a.length()) msgs.add(Msg.from(a.getJSONObject(i)))
         }

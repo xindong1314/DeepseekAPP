@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 
 package com.example.dsphone
 
@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -764,36 +765,147 @@ private val dateFmt = SimpleDateFormat("M月d日 HH:mm", Locale.CHINA)
 
 @Composable
 fun HistoryDrawer(vm: ChatViewModel, onClose: () -> Unit, onSettings: () -> Unit) {
+    var selecting by remember { mutableStateOf(false) }
+    val selected = remember { mutableStateListOf<Conv>() }
+    var menuFor by remember { mutableStateOf<Conv?>(null) }
+    var renaming by remember { mutableStateOf<Conv?>(null) }
+    var deleting by remember { mutableStateOf<List<Conv>?>(null) }
+    fun exitSelect() { selecting = false; selected.clear() }
+    BackHandler(selecting) { exitSelect() }
+
+    // 分组:置顶 / 今天 / 昨天 / 7 天内 / 按月
+    val groups = run {
+        val zone = java.util.Calendar.getInstance()
+        zone.set(java.util.Calendar.HOUR_OF_DAY, 0); zone.set(java.util.Calendar.MINUTE, 0)
+        zone.set(java.util.Calendar.SECOND, 0); zone.set(java.util.Calendar.MILLISECOND, 0)
+        val today = zone.timeInMillis; val day = 86_400_000L
+        val monthFmt = SimpleDateFormat("yyyy年M月", Locale.CHINA)
+        val sorted = vm.convs.sortedByDescending { it.updated }
+        val out = LinkedHashMap<String, MutableList<Conv>>()
+        sorted.filter { it.pinned }.takeIf { it.isNotEmpty() }?.let { out["置顶"] = it.toMutableList() }
+        sorted.filter { !it.pinned }.forEach { c ->
+            val key = when {
+                c.updated >= today -> "今天"
+                c.updated >= today - day -> "昨天"
+                c.updated >= today - 7 * day -> "7 天内"
+                else -> monthFmt.format(Date(c.updated))
+            }
+            out.getOrPut(key) { mutableListOf() }.add(c)
+        }
+        out
+    }
+
     ModalDrawerSheet(Modifier.width(310.dp), drawerContainerColor = Color.White) {
         Column(Modifier.fillMaxHeight().statusBarsPadding().padding(top = 14.dp)) {
-            Text("历史对话", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(18.dp, 4.dp, 18.dp, 10.dp))
+            if (selecting) {
+                Row(Modifier.fillMaxWidth().padding(18.dp, 4.dp, 14.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("已选择 ${selected.size} 个对话", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    IconButton(::exitSelect) { Icon(Icons.Outlined.Close, "退出多选") }
+                }
+            } else {
+                Text("历史对话", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(18.dp, 4.dp, 18.dp, 10.dp))
+            }
             if (vm.convs.isEmpty()) {
                 Text("还没有历史对话", color = Mut, fontSize = 13.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 30.dp).weight(1f))
             } else {
                 LazyColumn(Modifier.weight(1f)) {
-                    items(vm.convs.toList()) { c ->
-                        Row(
-                            Modifier.padding(horizontal = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                                .background(if (c === vm.cur) Grey else Color.Transparent)
-                                .clickable { vm.open(c); onClose() }.padding(start = 18.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(c.title.ifEmpty { "新对话" }, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text("${dateFmt.format(Date(c.updated))} · ${Cost.yuan(c.cost)}", fontSize = 12.sp, color = Mut)
+                    groups.forEach { (label, list) ->
+                        item(key = "h_$label") { Text(label, fontSize = 13.sp, color = Mut, modifier = Modifier.padding(18.dp, 12.dp, 18.dp, 4.dp)) }
+                        items(list, key = { it.id }) { c ->
+                            val on = c in selected
+                            Box {
+                                Row(
+                                    Modifier.padding(horizontal = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                                        .background(if (c === vm.cur && !selecting) Grey else Color.Transparent)
+                                        .combinedClickable(
+                                            onClick = {
+                                                if (selecting) { if (on) selected.remove(c) else selected.add(c) }
+                                                else { vm.open(c); onClose() }
+                                            },
+                                            onLongClick = { if (!selecting) menuFor = c },
+                                        ).padding(start = 10.dp, top = 8.dp, bottom = 8.dp, end = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    if (selecting) {
+                                        Box(
+                                            Modifier.padding(end = 12.dp).size(22.dp).clip(CircleShape)
+                                                .background(if (on) Pri else Color.Transparent)
+                                                .border(1.5.dp, if (on) Pri else LineC, CircleShape),
+                                            contentAlignment = Alignment.Center,
+                                        ) { if (on) Icon(Icons.Outlined.Check, null, Modifier.size(14.dp), tint = Color.White) }
+                                    } else Spacer(Modifier.width(8.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(c.title.ifEmpty { "新对话" }, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text("${dateFmt.format(Date(c.updated))} · ${Cost.yuan(c.cost)}", fontSize = 12.sp, color = Mut)
+                                    }
+                                }
+                                DropdownMenu(menuFor === c, { menuFor = null }, offset = androidx.compose.ui.unit.DpOffset(60.dp, 0.dp), containerColor = Color.White) {
+                                    DropdownMenuItem({ Text("重命名") }, { menuFor = null; renaming = c }, leadingIcon = { Icon(Icons.Outlined.Edit, null) })
+                                    DropdownMenuItem(
+                                        { Text(if (c.pinned) "取消置顶" else "置顶") }, { menuFor = null; vm.setPinned(listOf(c), !c.pinned) },
+                                        leadingIcon = { Icon(Icons.Outlined.PushPin, null) },
+                                    )
+                                    DropdownMenuItem({ Text("多选") }, { menuFor = null; selecting = true; selected.clear(); selected.add(c) }, leadingIcon = { Icon(Icons.Outlined.Checklist, null) })
+                                    DropdownMenuItem(
+                                        { Text("删除", color = Color(0xFFE53935)) }, { menuFor = null; deleting = listOf(c) },
+                                        leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = Color(0xFFE53935)) },
+                                    )
+                                }
                             }
-                            IconButton({ vm.delete(c) }) { Icon(Icons.Outlined.Delete, "删除", Modifier.size(18.dp), tint = Mut) }
                         }
                     }
                 }
             }
             HorizontalDivider(Modifier.padding(horizontal = 18.dp), color = LineC)
-            Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(18.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "累计 ${Cost.yuan(vm.total)}" + (vm.balanceShort?.let { "  ·  余额 $it" } ?: ""),
-                    fontSize = 13.sp, color = Mut, modifier = Modifier.weight(1f),
-                )
-                FilledTonalButton(onSettings, colors = ButtonDefaults.filledTonalButtonColors(containerColor = Grey, contentColor = Ink)) { Text("设置") }
+            if (selecting) {
+                val allPinned = selected.isNotEmpty() && selected.all { it.pinned }
+                Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        { vm.setPinned(selected.toList(), !allPinned); exitSelect() }, Modifier.weight(1f), enabled = selected.isNotEmpty(),
+                        colors = ButtonDefaults.textButtonColors(contentColor = Ink),
+                    ) { Icon(Icons.Outlined.PushPin, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text(if (allPinned) "取消置顶" else "置顶", fontSize = 16.sp) }
+                    TextButton(
+                        { deleting = selected.toList() }, Modifier.weight(1f), enabled = selected.isNotEmpty(),
+                        colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFE53935)),
+                    ) { Icon(Icons.Outlined.Delete, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("删除", fontSize = 16.sp) }
+                }
+            } else {
+                Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(18.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "累计 ${Cost.yuan(vm.total)}" + (vm.balanceShort?.let { "  ·  余额 $it" } ?: ""),
+                        fontSize = 13.sp, color = Mut, modifier = Modifier.weight(1f),
+                    )
+                    FilledTonalButton(onSettings, colors = ButtonDefaults.filledTonalButtonColors(containerColor = Grey, contentColor = Ink)) { Text("设置") }
+                }
+            }
+        }
+    }
+
+    renaming?.let { c ->
+        var text by remember(c) { mutableStateOf(c.title) }
+        AlertDialog(
+            onDismissRequest = { renaming = null },
+            title = { Text("重命名") },
+            text = { OutlinedTextField(text, { text = it }, singleLine = true, modifier = Modifier.fillMaxWidth()) },
+            confirmButton = { TextButton({ vm.rename(c, text); renaming = null }, enabled = text.isNotBlank()) { Text("确定") } },
+            dismissButton = { TextButton({ renaming = null }) { Text("取消") } },
+            containerColor = Color.White,
+        )
+    }
+    deleting?.let { list ->
+        androidx.compose.ui.window.Dialog({ deleting = null }) {
+            Surface(shape = RoundedCornerShape(24.dp), color = Color.White) {
+                Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(if (list.size == 1) "删除后,该对话将不可恢复" else "删除选择的 ${list.size} 个对话?", fontSize = 18.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(8.dp))
+                    Text("聊天记录和其中的图片会从本机删除。", fontSize = 14.sp, color = Mut, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(24.dp))
+                    Button(
+                        { vm.deleteAll(list); deleting = null; exitSelect() }, Modifier.fillMaxWidth().height(50.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444), contentColor = Color.White),
+                    ) { Text(if (list.size == 1) "删除该对话" else "删除", fontSize = 16.sp) }
+                    TextButton({ deleting = null }, Modifier.padding(top = 4.dp), colors = ButtonDefaults.textButtonColors(contentColor = Mut)) { Text("取消", fontSize = 16.sp) }
+                }
             }
         }
     }

@@ -73,6 +73,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         convs.remove(c); store.delete(c)
         if (c === cur) newConv()
     }
+    fun deleteAll(list: Collection<Conv>) { list.toList().forEach { delete(it) } }
+    fun rename(c: Conv, t: String) { if (t.isNotBlank()) { c.title = t.trim(); store.save(c) } }
+    fun setPinned(list: Collection<Conv>, pin: Boolean) { list.forEach { it.pinned = pin; store.save(it) } }
 
     // ---------------- 聊天记录导入 / 导出(与 DeepSeek 官方导出格式一致) ----------------
     var portStatus by mutableStateOf("")
