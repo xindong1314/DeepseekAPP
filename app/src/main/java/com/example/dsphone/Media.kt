@@ -62,6 +62,21 @@ object Media {
         return Attach("text", name, out.absolutePath, src = uri.toString())
     }
 
+    /** 从内存字节导入附件(聊天记录导入用)。无法识别的二进制文件会抛异常 */
+    fun importBytes(ctx: Context, bytes: ByteArray, name: String, isImage: Boolean): Attach {
+        if (isImage) {
+            val out = File(attDir(ctx), "${System.nanoTime()}.jpg")
+            saveScaledJpeg(bytes, out, 2048)
+            return Attach("image", name, out.absolutePath)
+        }
+        val ext = name.substringAfterLast('.', "").lowercase()
+        val out = File(attDir(ctx), "${System.nanoTime()}_${name.replace(Regex("[\\\\/:*?\"<>|]"), "_")}")
+        out.writeBytes(bytes)
+        if (ext in docExt) return Attach("doc", name, out.absolutePath).also { it.pages = if (ext == "pdf") pdfPages(out) else 1 }
+        if (bytes.take(4096).any { it.toInt() == 0 }) { out.delete(); throw IllegalArgumentException("不支持的文件类型:$name") }
+        return Attach("text", name, out.absolutePath)
+    }
+
     /** 相机拍的照片(已写入 file) */
     fun importPhoto(ctx: Context, file: File): Attach {
         val out = File(attDir(ctx), "${System.nanoTime()}.jpg")
@@ -77,7 +92,8 @@ object Media {
         while (max(bo.outWidth, bo.outHeight) / sample > maxSide * 2) sample *= 2
         var bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
             ?: throw IllegalArgumentException("无法解码图片")
-        val deg = when (ExifInterface(bytes.inputStream()).getAttributeInt(ExifInterface.TAG_ORIENTATION, 1)) {
+        val orientation = runCatching { ExifInterface(bytes.inputStream()).getAttributeInt(ExifInterface.TAG_ORIENTATION, 1) }.getOrDefault(1)
+        val deg = when (orientation) {
             ExifInterface.ORIENTATION_ROTATE_90 -> 90f
             ExifInterface.ORIENTATION_ROTATE_180 -> 180f
             ExifInterface.ORIENTATION_ROTATE_270 -> 270f

@@ -237,7 +237,10 @@ fun UserBubble(m: Msg) {
                 if (a.kind == "image") {
                     LocalImage(a.path, Modifier.padding(bottom = 6.dp).size(180.dp, 140.dp).clip(RoundedCornerShape(10.dp)))
                 } else {
-                    Text("📄 ${a.name}", fontSize = 13.sp, color = Mut, modifier = Modifier.padding(bottom = 6.dp))
+                    Text(
+                        "📄 ${a.name}" + if (a.kind == "missing") "(导出文件未包含内容)" else "",
+                        fontSize = 13.sp, color = Mut, modifier = Modifier.padding(bottom = 6.dp),
+                    )
                 }
             }
             if (m.content.isNotEmpty()) Text(m.content, fontSize = 16.sp, lineHeight = 25.sp)
@@ -622,6 +625,8 @@ fun SettingsPage(vm: ChatViewModel, onBack: () -> Unit) {
     var showModels by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
     val pickBg = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { it?.let(vm::setBackgroundImage) }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { it?.let(vm::exportTo) }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(vm::importFrom) }
     BackHandler(onBack = onBack)
 
     Column(Modifier.fillMaxSize().background(PageBg).pointerInput(Unit) { detectTapGestures { } }.statusBarsPadding()) {
@@ -687,12 +692,23 @@ fun SettingsPage(vm: ChatViewModel, onBack: () -> Unit) {
 
             GroupLabel("数据")
             Group {
+                SRow("导出聊天记录", "含图片,格式与 DeepSeek 官方导出一致", onClick = {
+                    exportLauncher.launch("deepseek_data-${SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())}.zip")
+                }) { Text("›", fontSize = 22.sp, color = Color(0xFFC0C2CA)) }
+                SRow("导入聊天记录", "选择 DeepSeek 官方导出的 .zip,重复导入会自动跳过", onClick = {
+                    importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+                }) { Text("›", fontSize = 22.sp, color = Color(0xFFC0C2CA)) }
                 SRow("清空所有对话", labelColor = Color(0xFFD93025), divider = false, onClick = { confirmClear = true })
             }
         }
     }
 
     if (showModels) ModelSheet(vm) { showModels = false }
+    if (vm.portStatus.isNotEmpty()) AlertDialog(
+        onDismissRequest = {}, confirmButton = {},
+        title = { Text(vm.portStatus, fontSize = 16.sp) },
+        text = { LinearProgressIndicator(Modifier.fillMaxWidth(), color = Pri) },
+    )
     if (confirmClear) AlertDialog(
         onDismissRequest = { confirmClear = false },
         title = { Text("清空所有对话?") },

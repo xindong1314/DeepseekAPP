@@ -54,6 +54,55 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (c === cur) newConv()
     }
 
+    // ---------------- 聊天记录导入 / 导出(与 DeepSeek 官方导出格式一致) ----------------
+    var portStatus by mutableStateOf("")
+
+    fun exportTo(uri: Uri) {
+        if (portStatus.isNotEmpty()) return
+        viewModelScope.launch {
+            portStatus = "正在导出…"
+            try {
+                val n = withContext(Dispatchers.IO) {
+                    val all = convs.toList()
+                    ctx.contentResolver.openOutputStream(uri)!!.use { ChatPorter.export(all, it) }
+                }
+                toast(if (n == 0) "没有可导出的对话" else "已导出 $n 个对话")
+            } catch (e: Exception) {
+                toast("导出失败:${e.message}")
+            } finally { portStatus = "" }
+        }
+    }
+
+    fun importFrom(uri: Uri) {
+        if (portStatus.isNotEmpty()) return
+        viewModelScope.launch {
+            portStatus = "正在读取文件…"
+            val tmp = File(ctx.cacheDir, "import.zip")
+            try {
+                val res = withContext(Dispatchers.IO) {
+                    ctx.contentResolver.openInputStream(uri)!!.use { i -> tmp.outputStream().use { o -> i.copyTo(o) } }
+                    ChatPorter.import(ctx, tmp, convs.toList()) { d, t -> portStatus = "正在导入… $d / $t" }
+                }
+                withContext(Dispatchers.IO) { res.convs.forEach { store.save(it) } }
+                convs.addAll(res.convs)
+                convs.sortByDescending { it.updated }
+                val extra = buildList {
+                    if (res.skippedExisting > 0) add("${res.skippedExisting} 个已存在而跳过")
+                    if (res.droppedBranches > 0) add("${res.droppedBranches} 个对话只导入了当前分支")
+                    if (res.missingFiles > 0) add("${res.missingFiles} 个附件文件未包含在导出中")
+                    if (res.failed > 0) add("${res.failed} 个解析失败")
+                }
+                toast("已导入 ${res.convs.size} 个对话" + if (extra.isEmpty()) "" else "(" + extra.joinToString(",") + ")")
+            } catch (e: java.util.zip.ZipException) {
+                toast("不是有效的 zip 文件")
+            } catch (e: Exception) {
+                toast("导入失败:${e.message}")
+            } finally {
+                tmp.delete(); portStatus = ""
+            }
+        }
+    }
+
     fun clearAll() {
         stop()
         convs.toList().forEach { store.delete(it) }

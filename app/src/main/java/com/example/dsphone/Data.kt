@@ -41,6 +41,7 @@ class Msg(val role: String, content: String = "", reasoning: String? = null) {
     var costText by mutableStateOf("")
     var cost = 0.0
     var model = ""
+    var time = System.currentTimeMillis()   // 消息时间(导出用);旧数据没有则为 0
     var asrSec = 0
     var asrCost = 0.0
     val attachments = mutableListOf<Attach>()
@@ -48,7 +49,7 @@ class Msg(val role: String, content: String = "", reasoning: String? = null) {
 
     fun toJson(): JSONObject = JSONObject().put("role", role).put("content", content)
         .put("reasoning", reasoning ?: JSONObject.NULL).put("thinkSec", thinkSec ?: JSONObject.NULL)
-        .put("costText", costText).put("cost", cost).put("model", model)
+        .put("costText", costText).put("cost", cost).put("model", model).put("t", time)
         .put("asrSec", asrSec).put("asrCost", asrCost)
         .put("att", JSONArray().also { a -> attachments.forEach { a.put(it.toJson()) } })
         .put("src", JSONArray().also { a ->
@@ -59,6 +60,7 @@ class Msg(val role: String, content: String = "", reasoning: String? = null) {
         fun from(j: JSONObject) = Msg(j.getString("role"), j.optString("content"), j.str("reasoning")).apply {
             thinkSec = if (j.isNull("thinkSec")) null else j.getInt("thinkSec")
             costText = j.optString("costText"); cost = j.optDouble("cost", 0.0); model = j.optString("model")
+            time = j.optLong("t", 0L)
             asrSec = j.optInt("asrSec"); asrCost = j.optDouble("asrCost", 0.0)
             j.optJSONArray("att")?.let { a -> for (i in 0 until a.length()) attachments.add(Attach.from(a.getJSONObject(i))) }
             j.optJSONArray("src")?.let { a ->
@@ -72,14 +74,16 @@ class Conv(val id: Long) {
     var title by mutableStateOf("")
     var cost by mutableDoubleStateOf(0.0)
     var updated by mutableLongStateOf(System.currentTimeMillis())
+    var srcId = ""   // 导入时记录官方会话 UUID,用于重复导入去重
     val msgs = mutableStateListOf<Msg>()
 
-    fun toJson(): JSONObject = JSONObject().put("id", id).put("title", title).put("cost", cost).put("updated", updated)
+    fun toJson(): JSONObject = JSONObject().put("id", id).put("title", title).put("cost", cost).put("updated", updated).put("srcId", srcId)
         .put("msgs", JSONArray().also { a -> msgs.forEach { a.put(it.toJson()) } })
 
     companion object {
         fun from(j: JSONObject) = Conv(j.getLong("id")).apply {
             title = j.optString("title"); cost = j.optDouble("cost", 0.0); updated = j.optLong("updated")
+            srcId = j.optString("srcId")
             val a = j.getJSONArray("msgs")
             for (i in 0 until a.length()) msgs.add(Msg.from(a.getJSONObject(i)))
         }

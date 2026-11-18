@@ -19,6 +19,7 @@ A simple app to use Deepseek by key,even I still do not understand why not Deeps
 | 语音输入 | 按住说话,调用官方语音识别接口(16kHz WAV,最长 120 秒) |
 | 费用显示 | 每条回复显示 token、搜索、OCR 等明细和费用;顶部显示本对话和累计费用 |
 | 聊天记录 | 全部保存在本机,历史抽屉里切换和删除 |
+| 导入 / 导出 | 设置 → 数据。导出为 DeepSeek 官方同款 zip(含图片);也能直接导入官方导出的聊天记录,重复导入自动跳过 |
 | 自定义背景 | 纯色、渐变或自己的图片;新对话保持空白 |
 
 ## 安装使用
@@ -65,6 +66,7 @@ app/src/main/java/com/example/dsphone/
 ├── Pricing.kt        模型、价格、高峰判断、费用计算
 ├── Data.kt           消息 / 对话数据模型、本地存储、设置
 ├── Media.kt          图片缩放与导入、PDF 页数、WAV 录音
+├── ChatPorter.kt     聊天记录导入 / 导出(官方 export_format_version = 3)
 ├── Markdown.kt       简易 Markdown 渲染
 ├── Ui.kt             全部界面(顶栏、消息、输入区、历史、设置)
 └── MainActivity.kt
@@ -74,6 +76,14 @@ mockup.html           界面原型,浏览器直接打开即可预览
 ## 当前状态
 
 早期版本。已在模拟器里验证:应用能启动、界面正常、请求能发到 DeepSeek 并正确显示错误。**真实对话、联网搜索、图片/文档处理、语音输入、拍照**这些依赖有效 Key 和真机硬件的路径,是按官方文档实现的,还没有充分的真机测试,遇到问题欢迎提 Issue。
+
+## 聊天记录导入 / 导出说明
+
+- 格式:与 DeepSeek 官方导出的 `deepseek_data-日期.zip` 一致(`manifest.json`、`chat_session_index.json`、`chat_sessions/<会话 id>.json`,图片放在 `<会话 id>_files/` 目录)。导出时 `user.json` 只写空占位,不包含邮箱、手机号。
+- 官方导出**只带图片**,PDF、Word、代码等非图片附件只有文件名,导入后会显示文件名并标注"导出文件未包含内容"。
+- 官方记录是分支树(点过"重新生成"之类会产生分支),本应用是线性对话,导入时只保留当前选中的那条分支。
+- 官方记录没有费用信息,导入的对话费用显示为 0。
+- 已用一份真实的官方导出文件做过导入测试,会话、消息、图片的数量和正文与原文件一致;把导出的文件再次导入,会全部识别为已存在而跳过。
 
 ## 许可
 
