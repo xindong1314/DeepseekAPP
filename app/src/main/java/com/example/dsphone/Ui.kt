@@ -22,6 +22,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -218,12 +219,24 @@ fun MessageList(vm: ChatViewModel, onSpeak: (String) -> Unit, modifier: Modifier
         if (follow && msgs.isNotEmpty()) state.scrollToItem(msgs.size)   // 末尾占位项,滚到它 = 滚到底
     }
     val backing = vm.s.bgType == "image"
-    LazyColumn(
-        modifier, state, contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        items(msgs) { m -> if (m.role == "user") UserBubble(m) else AssistantBlock(m, backing, onSpeak) }
-        item { Spacer(Modifier.height(1.dp)) }
+    val scope = rememberCoroutineScope()
+    // 必须以当前对话的消息列表为 key,否则切换对话后仍引用最初那个空列表,按钮永远不显示
+    val showJump by remember(msgs) { derivedStateOf { msgs.isNotEmpty() && state.canScrollForward } }
+    Box(modifier) {
+        LazyColumn(
+            Modifier.fillMaxSize(), state, contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            items(msgs) { m -> if (m.role == "user") UserBubble(m) else AssistantBlock(m, backing, onSpeak) }
+            item { Spacer(Modifier.height(1.dp)) }
+        }
+        // 不在底部时,右下角出现"回到底部"圆形按钮
+        AnimatedVisibility(showJump, Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 12.dp), enter = fadeIn(), exit = fadeOut()) {
+            Surface(
+                Modifier.size(40.dp).clickable { follow = true; scope.launch { state.animateScrollToItem(msgs.size) } },
+                shape = CircleShape, color = Color.White, shadowElevation = 4.dp, border = BorderStroke(1.dp, LineC),
+            ) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.KeyboardArrowDown, "回到底部", Modifier.size(24.dp), tint = Ink) } }
+        }
     }
 }
 
