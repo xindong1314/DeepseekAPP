@@ -29,6 +29,9 @@ class StreamResult {
     var serverCalls: JSONArray? = null   // 联网工具的调用记录
 }
 
+/** 自定义服务商 /models 返回的模型:显示名、能否看图、支持的思考强度 */
+data class CustomModel(val id: String, val name: String, val vision: Boolean, val efforts: List<String>)
+
 data class Hit(val title: String, val url: String, val summary: String)
 
 /** 账户余额(GET /user/balance)。字段均为字符串,如 "110.00" */
@@ -118,6 +121,7 @@ object Api {
                 r.usage.fetch = it.optInt("tool_fetch")
             }
         }
+        j.optJSONObject("usage")?.optJSONObject("opencode")?.let { r.usage.allowance = it.optDouble("allowance", 0.0) }
         val ch = j.optJSONArray("choices")?.optJSONObject(0) ?: return
         ch.optJSONObject("server_tool_event")?.let { ev ->
             if (ev.optString("type") == "call_started") {
@@ -220,10 +224,18 @@ object Api {
     }
 
     // ---------------- 自定义服务商:模型列表 ----------------
-    suspend fun listModels(base: String, key: String): List<String> {
-        val j = exec(Request.Builder().url("$base/models").header("Authorization", "Bearer $key").build())
+    suspend fun listModels(base: String, key: String): List<CustomModel> {
+        val j = exec(Request.Builder().url("$base/models").apply { if (key.isNotBlank()) header("Authorization", "Bearer $key") }.build())
         val arr = j.optJSONArray("data") ?: return emptyList()
-        return (0 until arr.length()).map { arr.getJSONObject(it).optString("id") }.filter { it.isNotEmpty() }.sorted()
+        return (0 until arr.length()).map { arr.getJSONObject(it) }
+            .filter { it.optString("id").isNotEmpty() && it.optString("type", "chat") == "chat" }
+            .map { o ->
+                val inp = o.optJSONObject("modalities")?.optJSONArray("input")
+                val vision = inp != null && (0 until inp.length()).any { inp.optString(it).startsWith("image") }
+                val ef = o.optJSONObject("capabilities")?.optJSONObject("reasoning")?.optJSONArray("effort")
+                CustomModel(o.getString("id"), o.optString("name").ifBlank { o.getString("id") }, vision,
+                    if (ef == null) emptyList() else (0 until ef.length()).map { ef.optString(it) })
+            }.sortedBy { it.name.lowercase() }
     }
 
     // ---------------- 搜索 / 抓取(Pro 联网用) ----------------

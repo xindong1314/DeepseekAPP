@@ -76,15 +76,16 @@ class Conv(val id: Long) {
     var updated by mutableLongStateOf(System.currentTimeMillis())
     var srcId = ""   // 导入时记录官方会话 UUID,用于重复导入去重
     var pinned by mutableStateOf(false)
+    var allowance by mutableDoubleStateOf(0.0)   // 自定义服务商累计消耗的订阅额度
     val msgs = mutableStateListOf<Msg>()
 
-    fun toJson(): JSONObject = JSONObject().put("id", id).put("title", title).put("cost", cost).put("updated", updated).put("srcId", srcId).put("pinned", pinned)
+    fun toJson(): JSONObject = JSONObject().put("id", id).put("title", title).put("cost", cost).put("updated", updated).put("srcId", srcId).put("pinned", pinned).put("allow", allowance)
         .put("msgs", JSONArray().also { a -> msgs.forEach { a.put(it.toJson()) } })
 
     companion object {
         fun from(j: JSONObject) = Conv(j.getLong("id")).apply {
             title = j.optString("title"); cost = j.optDouble("cost", 0.0); updated = j.optLong("updated")
-            srcId = j.optString("srcId"); pinned = j.optBoolean("pinned", false)
+            srcId = j.optString("srcId"); pinned = j.optBoolean("pinned", false); allowance = j.optDouble("allow", 0.0)
             val a = j.getJSONArray("msgs")
             for (i in 0 until a.length()) msgs.add(Msg.from(a.getJSONObject(i)))
         }
@@ -130,6 +131,8 @@ class Settings(ctx: Context) {
     var customUrl by mutableStateOf(sp.getString("customUrl", DEFAULT_CUSTOM_URL) ?: DEFAULT_CUSTOM_URL)
     var customKey by mutableStateOf(sp.getString("customKey", "") ?: "")
     var customModel by mutableStateOf(sp.getString("customModel", "") ?: "")
+    var customModelName by mutableStateOf(sp.getString("customModelName", "") ?: "")
+    var customVision by mutableStateOf(sp.getBoolean("customVision", true))
     val isCustom get() = provider == "custom"
     val activeKey get() = if (isCustom) customKey else apiKey
     val activeBase get() = if (isCustom) customUrl.trim().trimEnd('/') else Api.DEEPSEEK_BASE
@@ -146,6 +149,7 @@ class Settings(ctx: Context) {
             .putString("effort", effort).putBoolean("web", web).putBoolean("speak", speak)
             .putString("bgType", bgType).putInt("bgColor", bgColor).putInt("bgDim", bgDim)
             .putString("provider", provider).putString("customUrl", customUrl)
-            .putString("customKey", customKey).putString("customModel", customModel).apply()
+            .putString("customKey", customKey).putString("customModel", customModel)
+            .putString("customModelName", customModelName).putBoolean("customVision", customVision).apply()
     }
 }

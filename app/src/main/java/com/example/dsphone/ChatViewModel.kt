@@ -61,14 +61,42 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** 抽屉里用的简短余额文字,如 ¥110.00 */
     val balanceShort: String? get() = balance?.items?.firstOrNull()?.let { it.symbol + it.total }
 
-    val info get() = if (s.isCustom) Models.custom(s.customModel) else Models.byId(s.model)
+    val info get() = if (s.isCustom) Models.custom(s.customModel, s.customModelName.ifBlank { s.customModel }, s.customVision) else Models.byId(s.model)
+    val totalAllowance get() = convs.filter { it !== cur }.sumOf { it.allowance } + cur.allowance
     val total get() = convs.filter { it !== cur }.sumOf { it.cost } + cur.cost
 
     fun toast(t: String) { toastMsg = t }
 
     // ---------------- 对话管理 ----------------
-    fun newConv() { stop(); cur = Conv(System.currentTimeMillis()); pending.clear(); error = null; input = "" }
-    fun open(c: Conv) { stop(); cur = c; pending.clear(); error = null }
+    fun newConv() { stop(); cur = Conv(System.currentTimeMillis()); pending.clear(); error = null; input = ""; editing = null; endSelect() }
+    fun open(c: Conv) { stop(); cur = c; pending.clear(); error = null; editing = null; endSelect() }
+
+    // ---------------- 修改输入 / 重新生成 / 消息多选删除 ----------------
+    var editing by mutableStateOf<Msg?>(null)
+    fun startEdit(m: Msg) { if (busy) return; editing = m; input = m.content }
+    fun cancelEdit() { editing = null; input = "" }
+
+    fun regenerate() {
+        if (busy) return
+        val c = cur
+        val i = c.msgs.indexOfLast { it.role == "user" }
+        if (i < 0) return
+        while (c.msgs.size > i + 1) c.msgs.removeAt(c.msgs.size - 1)
+        error = null
+        generate()
+    }
+
+    var selecting by mutableStateOf(false)
+    val selected = mutableStateListOf<Msg>()
+    fun beginSelect(m: Msg) { if (busy) return; selecting = true; selected.clear(); selected.add(m) }
+    fun endSelect() { selecting = false; selected.clear() }
+    fun deleteSelected() {
+        val c = cur
+        c.msgs.removeAll(selected.toSet())
+        endSelect()
+        if (c.msgs.isEmpty()) delete(c) else { c.updated = System.currentTimeMillis(); store.save(c) }
+    }
+    fun deleteMsg(m: Msg) { selected.clear(); selected.add(m); deleteSelected() }
     fun delete(c: Conv) {
         convs.remove(c); store.delete(c)
         if (c === cur) newConv()
@@ -136,12 +164,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun stop() { job?.cancel() }
 
     // ---------------- 设置 ----------------
-    fun setCustomModel(id: String) { s.customModel = id; s.save() }
+    fun setCustomModel(m: CustomModel) { s.customModel = m.id; s.customModelName = m.name; s.customVision = m.vision; s.save() }
 
-    var customModels by mutableStateOf<List<String>>(emptyList())
+    var customModels by mutableStateOf<List<CustomModel>>(emptyList())
     var customModelsStatus by mutableStateOf("")
     fun loadCustomModels() {
-        if (s.customKey.isBlank()) { customModelsStatus = "请先填写 API Key"; return }
         viewModelScope.launch {
             customModelsStatus = "获取中…"
             try {
@@ -172,7 +199,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     .onSuccess { pending.add(it) }
                     .onFailure { toast(it.message ?: "无法读取文件") }
             }
-            if (!info.vision && pending.any { it.kind == "image" || it.kind == "doc" })
+            if (s.isCustom) {
+                if (!info.vision && pending.any { it.kind == "image" }) toast("当前模型不支持看图,图片不会发送")
+                if (pending.any { it.kind == "doc" }) toast("自定义服务商不支持文件解析,只会发送文件名")
+            } else if (!info.vision && pending.any { it.kind == "image" || it.kind == "doc" })
                 toast("V4 Pro 不能直接看图:发送时先用 OCR 转文字(1.5 元/千页)")
         }
     }
@@ -211,11 +241,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     // ---------------- 发送 ----------------
     fun send() {
         val text = input.trim()
-        if (text.isEmpty() && pending.isEmpty()) return
+        if (text.isEmpty() && pending.isEmpty() && editing?.attachments.isNullOrEmpty()) return
         if (busy) return
         if (s.activeKey.isBlank()) { error = "请先在设置里填写 API Key"; return }
         if (s.isCustom && s.customModel.isBlank()) { error = "请先在设置里选择或填写模型名"; return }
         val um = Msg("user", text)
+        editing?.let { ed ->
+            val i = cur.msgs.indexOf(ed)
+            if (i >= 0) { um.attachments.addAll(ed.attachments); while (cur.msgs.size > i) cur.msgs.removeAt(cur.msgs.size - 1) }
+            editing = null
+        }
         um.attachments.addAll(pending); pending.clear()
         um.asrSec = asrSec; um.asrCost = asrCost; asrSec = 0; asrCost = 0.0
         input = ""; error = null
@@ -229,7 +264,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val conv = cur
         val custom = s.isCustom
         val web = s.web && !custom
-        val thinking = s.think && !custom
+        val thinking = s.think
         val effort = s.effort
         val key = s.activeKey
         val base = s.activeBase
@@ -262,6 +297,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     val b = JSONObject().put("model", model.id).put("messages", msgs).put("stream", true)
                     if (custom) {
                         b.put("stream_options", JSONObject().put("include_usage", true))
+                        if (thinking) b.put("reasoning_effort", effort)
                         return b
                     }
                     if (thinking) b.put("thinking", JSONObject().put("type", "enabled")).put("reasoning_effort", effort)
@@ -362,9 +398,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 if (usage.search > 0) append(" · 搜索 ${usage.search} 次")
                 if (usage.fetch > 0) append(" · 抓取 ${usage.fetch} 次")
                 if (ocrPages > 0) append(" · OCR/解析 $ocrPages 页")
+                if (usage.allowance > 0) append(" · 额度 ${Cost.allow(usage.allowance)}")
                 if (!model.custom) append(if (peak) " · 高峰价" else " · 空闲价")
             }
-            conv.cost += cost
+            conv.cost += cost; conv.allowance += usage.allowance
             if (s.speak && m.content != "(已停止)") speakRequest = m.content
         }
         conv.updated = System.currentTimeMillis()
@@ -413,6 +450,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 for (a in m.attachments) when (a.kind) {
                     "image" -> if (model.vision)
                         blocks.put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", Media.dataUrl(a.path))))
+                    else if (model.custom) texts.append("【图片「${a.name}」未发送:当前模型不支持看图】\n\n")
                     else texts.append("【图片「${a.name}」的识别文字】\n${a.ocrText}\n\n")
                     "doc" -> if (model.custom) texts.append("【文档「${a.name}」未发送:当前服务商不支持文件解析】\n\n")
                     else if (model.vision)

@@ -28,6 +28,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -137,6 +139,7 @@ fun App(vm: ChatViewModel) {
     var showModels by remember { mutableStateOf(false) }
     val speaker = remember { Speaker(ctx) }
     DisposableEffect(Unit) { onDispose { speaker.shutdown() } }
+    BackHandler(vm.selecting) { vm.endSelect() }
     LaunchedEffect(vm.speakRequest) { vm.speakRequest?.let { speaker.say(plainText(it)); vm.speakRequest = null } }
     LaunchedEffect(vm.toastMsg) { vm.toastMsg?.let { Toast.makeText(ctx, it, Toast.LENGTH_SHORT).show(); vm.toastMsg = null } }
 
@@ -150,9 +153,9 @@ fun App(vm: ChatViewModel) {
         Box(Modifier.fillMaxSize().background(Color.White)) {
             ChatBackground(vm)
             Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
-                TopBar(vm, onMenu = { scope.launch { drawer.open() } }, onTitle = { showModels = true })
+                if (vm.selecting) SelectTopBar(vm) else TopBar(vm, onMenu = { scope.launch { drawer.open() } }, onTitle = { showModels = true })
                 MessageList(vm, onSpeak = { speaker.say(plainText(it)) }, modifier = Modifier.weight(1f))
-                Dock(vm)
+                if (vm.selecting) SelectBottomBar(vm) else Dock(vm)
             }
         }
     }
@@ -205,6 +208,25 @@ fun TopBar(vm: ChatViewModel, onMenu: () -> Unit, onTitle: () -> Unit) {
     }
 }
 
+@Composable
+fun SelectTopBar(vm: ChatViewModel) {
+    Box(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
+        TextButton({ vm.endSelect() }, Modifier.align(Alignment.CenterStart), colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("取消", fontSize = 17.sp) }
+        Text("选择对话", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+fun SelectBottomBar(vm: ChatViewModel) {
+    Column(Modifier.fillMaxWidth().background(Color.White).navigationBarsPadding()) {
+        HorizontalDivider(color = LineC)
+        Button(
+            { vm.deleteSelected() }, Modifier.fillMaxWidth().padding(16.dp).height(52.dp), enabled = vm.selected.isNotEmpty(),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444), contentColor = Color.White),
+        ) { Text(if (vm.selected.isEmpty()) "删除" else "删除(${vm.selected.size})", fontSize = 16.sp) }
+    }
+}
+
 fun effortCn(e: String) = when (e) { "low" -> "低"; "max" -> "最大"; else -> "高" }
 
 // ---------------------------------------------------------------- 消息列表
@@ -228,7 +250,25 @@ fun MessageList(vm: ChatViewModel, onSpeak: (String) -> Unit, modifier: Modifier
             Modifier.fillMaxSize(), state, contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            items(msgs) { m -> if (m.role == "user") UserBubble(m) else AssistantBlock(m, backing, onSpeak) }
+            items(msgs) { m ->
+                val on = m in vm.selected
+                Box {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (vm.selecting) {
+                            Box(
+                                Modifier.padding(end = 12.dp).size(22.dp).clip(CircleShape)
+                                    .background(if (on) Pri else Color.Transparent).border(1.5.dp, if (on) Pri else LineC, CircleShape),
+                                contentAlignment = Alignment.Center,
+                            ) { if (on) Icon(Icons.Outlined.Check, null, Modifier.size(14.dp), tint = Color.White) }
+                        }
+                        Box(Modifier.weight(1f)) {
+                            if (m.role == "user") UserBubble(m, if (vm.selecting || vm.busy) null else ({ vm.startEdit(m) }))
+                            else AssistantBlock(m, backing, onSpeak, vm, isLast = m === last)
+                        }
+                    }
+                    if (vm.selecting) Box(Modifier.matchParentSize().clickable { if (on) vm.selected.remove(m) else vm.selected.add(m) })
+                }
+            }
             item { Spacer(Modifier.height(1.dp)) }
         }
         // 不在底部时,右下角出现"回到底部"圆形按钮
@@ -242,10 +282,11 @@ fun MessageList(vm: ChatViewModel, onSpeak: (String) -> Unit, modifier: Modifier
 }
 
 @Composable
-fun UserBubble(m: Msg) {
+fun UserBubble(m: Msg, onEdit: (() -> Unit)? = null) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Column(
-            Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp)).background(Color(0xFFF0F1F5)).padding(horizontal = 14.dp, vertical = 10.dp),
+            Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp)).background(Color(0xFFF0F1F5))
+                .then(if (onEdit != null) Modifier.clickable(onClick = onEdit) else Modifier).padding(horizontal = 14.dp, vertical = 10.dp),
         ) {
             m.attachments.forEach { a ->
                 if (a.kind == "image") {
@@ -264,26 +305,59 @@ fun UserBubble(m: Msg) {
 }
 
 @Composable
-fun AssistantBlock(m: Msg, backing: Boolean, onSpeak: (String) -> Unit) {
+fun AssistantBlock(m: Msg, backing: Boolean, onSpeak: (String) -> Unit, vm: ChatViewModel, isLast: Boolean) {
+    var menu by remember { mutableStateOf(false) }
+    var pick by remember { mutableStateOf(false) }
     val clip = LocalClipboardManager.current
     val ctx = LocalContext.current
     val box = if (backing) Modifier.clip(RoundedCornerShape(18.dp)).background(Color.White.copy(alpha = 0.8f)).padding(12.dp, 12.dp, 12.dp, 4.dp) else Modifier
-    Column(Modifier.fillMaxWidth().then(box)) {
+    Box {
+    Column(
+        Modifier.fillMaxWidth().then(box).combinedClickable(
+            interactionSource = remember { MutableInteractionSource() }, indication = null,
+            onClick = {}, onLongClick = { if (!m.streaming) menu = true },
+        ),
+    ) {
         if (m.reasoning != null && (m.reasoning!!.isNotEmpty() || m.streaming)) ThinkBlock(m)
         if (m.status.isNotEmpty()) Text(m.status, fontSize = 13.sp, color = Mut, modifier = Modifier.padding(bottom = 8.dp))
         if (m.content.isNotEmpty()) MdText(m.content)
         else if (m.streaming && m.status.isEmpty() && m.reasoning.isNullOrEmpty()) Text("…", fontSize = 16.sp, color = Mut)
         if (m.sources.isNotEmpty()) SourcesBlock(m.sources)
         if (!m.streaming && m.content.isNotEmpty()) {
-            Row(Modifier.offset(x = (-8).dp)) {
+            Row(Modifier.fillMaxWidth().offset(x = (-8).dp)) {
                 IconButton({ clip.setText(AnnotatedString(plainText(m.content))); Toast.makeText(ctx, "已复制", Toast.LENGTH_SHORT).show() }, Modifier.size(40.dp)) {
                     Icon(Icons.Outlined.ContentCopy, "复制", Modifier.size(22.dp), tint = Color(0xFF5D5F6B))
                 }
                 IconButton({ onSpeak(m.content) }, Modifier.size(40.dp)) {
                     Icon(Icons.Outlined.VolumeUp, "朗读", Modifier.size(22.dp), tint = Color(0xFF5D5F6B))
                 }
+                if (isLast && !vm.busy) {
+                    Spacer(Modifier.weight(1f))
+                    IconButton({ vm.regenerate() }, Modifier.size(40.dp)) {
+                        Icon(Icons.Outlined.Refresh, "重新生成", Modifier.size(22.dp), tint = Color(0xFF5D5F6B))
+                    }
+                }
             }
             if (m.costText.isNotEmpty()) Text(m.costText, fontSize = 11.5.sp, color = Mut)
+        }
+    }
+    DropdownMenu(menu, { menu = false }, containerColor = Color.White) {
+        DropdownMenuItem({ Text("选取文字") }, { menu = false; pick = true }, leadingIcon = { Icon(Icons.Outlined.SelectAll, null) })
+        DropdownMenuItem(
+            { Text("删除", color = Color(0xFFE53935)) }, { menu = false; vm.beginSelect(m) },
+            leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = Color(0xFFE53935)) },
+        )
+    }
+    }
+    if (pick) androidx.compose.ui.window.Dialog({ pick = false }) {
+        Surface(shape = RoundedCornerShape(24.dp), color = Color.White) {
+            Column(Modifier.padding(20.dp)) {
+                Text("选取文字(长按选择)", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 10.dp))
+                Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
+                    SelectionContainer { Text(plainText(m.content), fontSize = 16.sp, lineHeight = 25.sp) }
+                }
+                TextButton({ pick = false }, Modifier.align(Alignment.End)) { Text("关闭") }
+            }
         }
     }
 }
@@ -366,12 +440,22 @@ fun Dock(vm: ChatViewModel) {
             Icon(Icons.Outlined.Info, null, Modifier.size(18.dp), tint = if (vm.error != null) Color(0xFFD93025) else Color(0xFF797B87))
             Spacer(Modifier.width(8.dp))
             Text(
-                vm.error?.let { it + if (noMoney) "  → 点此去充值" else "" } ?: "本对话 ${Cost.yuan(vm.cur.cost)} · 累计 ${Cost.yuan(vm.total)} · ${if (Cost.isPeak()) "⏰ 高峰价" else "🌙 空闲价"}",
+                vm.error?.let { it + if (noMoney) "  → 点此去充值" else "" } ?: if (vm.s.isCustom) "本对话额度 ${Cost.allow(vm.cur.allowance)} · 累计额度 ${Cost.allow(vm.totalAllowance)}"
+                    else "本对话 ${Cost.yuan(vm.cur.cost)} · 累计 ${Cost.yuan(vm.total)} · ${if (Cost.isPeak()) "⏰ 高峰价" else "🌙 空闲价"}",
                 fontSize = 13.sp, color = if (vm.error != null) Color(0xFFD93025) else Color(0xFF797B87), lineHeight = 18.sp,
             )
         }
         // 输入卡
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Color.White).padding(14.dp, 12.dp, 14.dp, 10.dp)) {
+            if (vm.editing != null) {
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(RoundedCornerShape(10.dp)).background(Grey).padding(start = 12.dp, end = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("修改输入", fontSize = 14.sp, color = Color(0xFF5D5F6B), modifier = Modifier.weight(1f))
+                    IconButton({ vm.cancelEdit() }, Modifier.size(36.dp)) { Icon(Icons.Outlined.Close, "取消修改", Modifier.size(18.dp)) }
+                }
+            }
             if (vm.pending.isNotEmpty()) {
                 Row(Modifier.horizontalScroll(rememberScrollState()).padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     vm.pending.toList().forEach { a -> PendingChip(a) { vm.removePending(a) } }
@@ -388,9 +472,9 @@ fun Dock(vm: ChatViewModel) {
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // 点一下按 关 → 低 → 高 → 最大 循环;按钮形状固定,只变文字和颜色
-                if (!s.isCustom) {
                 Pill(selected = s.think, onClick = { s.cycleEffort() }, icon = Icons.Outlined.Psychology, text = "深度思考",
-                    trailing = if (s.think) effortCn(s.effort) else "关")
+                    trailing = if (s.think) effortCn(s.effort) else if (s.isCustom) "默认" else "关")
+                if (!s.isCustom) {
                 Spacer(Modifier.width(6.dp))
                 Pill(selected = s.web, onClick = {
                     s.web = !s.web; s.save()
@@ -585,15 +669,25 @@ fun ModelSheet(vm: ChatViewModel, onDismiss: () -> Unit) {
                 LaunchedEffect(Unit) { if (vm.customModels.isEmpty()) vm.loadCustomModels() }
                 if (vm.customModelsStatus.isNotEmpty()) Text(vm.customModelsStatus, fontSize = 13.sp, color = Mut, modifier = Modifier.padding(bottom = 8.dp))
                 Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
-                    vm.customModels.forEach { id ->
-                        val sel = vm.s.customModel == id
+                    vm.customModels.forEach { cm ->
+                        val sel = vm.s.customModel == cm.id
                         val shape = RoundedCornerShape(14.dp)
-                        Text(
-                            id, fontSize = 16.sp, fontWeight = FontWeight.Medium,
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(shape).background(if (sel) PriCont else Color.Transparent)
+                        Row(
+                            Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(shape).background(if (sel) PriCont else Color.Transparent)
                                 .border(1.5.dp, if (sel) PriBorder else Color.Transparent, shape)
-                                .clickable { vm.setCustomModel(id); onDismiss() }.padding(12.dp),
-                        )
+                                .clickable { vm.setCustomModel(cm); onDismiss() }.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(cm.name, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                                Text(cm.id, fontSize = 12.sp, color = Mut)
+                            }
+                            Text(
+                                if (cm.vision) "可看图" else "仅文本", fontSize = 12.sp,
+                                color = if (cm.vision) PriText else Mut,
+                                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (cm.vision) PriCont else Grey).padding(horizontal = 8.dp, vertical = 3.dp),
+                            )
+                        }
                     }
                 }
                 TextButton({ vm.loadCustomModels() }) { Text("重新获取列表") }
@@ -705,10 +799,16 @@ fun SettingsPage(vm: ChatViewModel, onBack: () -> Unit) {
                             s.customKey, { s.customKey = it.trim(); s.save() }, Modifier.width(190.dp), singleLine = true,
                             visualTransformation = PasswordVisualTransformation(), cursorBrush = SolidColor(Pri),
                             textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, color = Ink, textAlign = TextAlign.End),
+                            decorationBox = { inner ->
+                                Box(contentAlignment = Alignment.CenterEnd) {
+                                    if (s.customKey.isEmpty()) Text("粘贴 Key", fontSize = 16.sp, color = Color(0xFFB3B5BE))
+                                    inner()
+                                }
+                            },
                         )
                     }
                     SRow("模型", divider = false, onClick = { showModels = true }) {
-                        ValueText(s.customModel.ifBlank { "点击选择" }); Text("  ›", fontSize = 22.sp, color = Color(0xFFC0C2CA))
+                        ValueText(s.customModelName.ifBlank { s.customModel }.ifBlank { "点击选择" }); Text("  ›", fontSize = 22.sp, color = Color(0xFFC0C2CA))
                     }
                     Note("接口地址填到 /v1 为止(程序会在后面加 /chat/completions 和 /models),默认值是 OpenCode Go 的 OpenAI 兼容地址,若不通请对照官方文档修改。点“模型”可从接口拉取列表。")
                 }
@@ -891,7 +991,7 @@ fun HistoryDrawer(vm: ChatViewModel, onClose: () -> Unit, onSettings: () -> Unit
                                     } else Spacer(Modifier.width(8.dp))
                                     Column(Modifier.weight(1f)) {
                                         Text(c.title.ifEmpty { "新对话" }, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Text("${dateFmt.format(Date(c.updated))} · ${Cost.yuan(c.cost)}", fontSize = 12.sp, color = Mut)
+                                        Text("${dateFmt.format(Date(c.updated))} · " + (if (c.cost > 0 || c.allowance == 0.0) Cost.yuan(c.cost) else "") + (if (c.allowance > 0) (if (c.cost > 0) " · " else "") + "额度 ${Cost.allow(c.allowance)}" else ""), fontSize = 12.sp, color = Mut)
                                     }
                                 }
                                 DropdownMenu(menuFor === c, { menuFor = null }, offset = androidx.compose.ui.unit.DpOffset(60.dp, 0.dp), containerColor = Color.White) {
@@ -927,7 +1027,7 @@ fun HistoryDrawer(vm: ChatViewModel, onClose: () -> Unit, onSettings: () -> Unit
             } else {
                 Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(18.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "累计 ${Cost.yuan(vm.total)}" + (vm.balanceShort?.let { "  ·  余额 $it" } ?: ""),
+                        "累计 ${Cost.yuan(vm.total)}" + (if (vm.totalAllowance > 0) "  ·  额度 ${Cost.allow(vm.totalAllowance)}" else "") + (vm.balanceShort?.let { "  ·  余额 $it" } ?: ""),
                         fontSize = 13.sp, color = Mut, modifier = Modifier.weight(1f),
                     )
                     FilledTonalButton(onSettings, colors = ButtonDefaults.filledTonalButtonColors(containerColor = Grey, contentColor = Ink)) { Text("设置") }

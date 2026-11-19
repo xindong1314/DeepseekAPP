@@ -35,9 +35,9 @@ object Models {
         Price(0.15, 0.30), Price(4.5, 9.0), Price(13.5, 27.0), vision = false, serverWeb = false,
     )
     val all = listOf(flash, pro)
-    fun custom(id: String) = ModelInfo(
-        id, id.ifBlank { "未选择模型" }, "自定义服务商的模型",
-        Price(0.0, 0.0), Price(0.0, 0.0), Price(0.0, 0.0), vision = true, serverWeb = false, custom = true,
+    fun custom(id: String, name: String = id, vision: Boolean = true) = ModelInfo(
+        id, name.ifBlank { "未选择模型" }, "自定义服务商的模型",
+        Price(0.0, 0.0), Price(0.0, 0.0), Price(0.0, 0.0), vision = vision, serverWeb = false, custom = true,
     )
     fun byId(id: String) =all.firstOrNull { it.id == id } ?: flash
 }
@@ -48,9 +48,10 @@ data class Usage(
     var out: Int = 0,
     var search: Int = 0,
     var fetch: Int = 0,
+    var allowance: Double = 0.0,   // 自定义服务商(OpenCode)返回的订阅额度消耗
 ) {
     fun add(o: Usage) {
-        hit += o.hit; miss += o.miss; out += o.out; search += o.search; fetch += o.fetch
+        hit += o.hit; miss += o.miss; out += o.out; search += o.search; fetch += o.fetch; allowance += o.allowance
     }
 }
 
@@ -69,6 +70,8 @@ object Cost {
 
     fun tokens(m: ModelInfo, u: Usage, peak: Boolean): Double =
         (u.hit * m.hit.at(peak) + u.miss * m.miss.at(peak) + u.out * m.out.at(peak)) / 1e6
+
+    fun allow(v: Double): String = String.format(Locale.US, if (v < 0.0001) "%.6f" else "%.4f", v)
 
     fun yuan(v: Double): String =
         "¥" + String.format(Locale.US, if (v < 0.01) "%.5f" else "%.4f", v)
