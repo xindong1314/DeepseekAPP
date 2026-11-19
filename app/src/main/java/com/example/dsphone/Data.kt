@@ -111,6 +111,17 @@ class Store(ctx: Context) {
     }
 }
 
+/** 联网搜索服务的类型:id 对应 Api.searchWith / fetchWith 里的适配器 */
+val SEARCH_TYPES = listOf("tavily" to "Tavily", "exa" to "Exa")
+
+data class SearchService(val id: String, val name: String, val type: String, val key: String) {
+    fun toJson(): JSONObject = JSONObject().put("id", id).put("name", name).put("type", type).put("key", key)
+
+    companion object {
+        fun from(j: JSONObject) = SearchService(j.getString("id"), j.optString("name"), j.optString("type", "tavily"), j.optString("key"))
+    }
+}
+
 const val DEFAULT_CUSTOM_URL = "https://opencode.ai/inference/go/openai/v1"
 
 class Settings(ctx: Context) {
@@ -133,6 +144,17 @@ class Settings(ctx: Context) {
     var customModel by mutableStateOf(sp.getString("customModel", "") ?: "")
     var customModelName by mutableStateOf(sp.getString("customModelName", "") ?: "")
     var customVision by mutableStateOf(sp.getBoolean("customVision", true))
+    // 联网搜索服务(自定义服务商用):可配置多个,选一个当前使用;抓取网页可单独指定另一个
+    val searchServices = mutableStateListOf<SearchService>().apply {
+        runCatching {
+            val a = JSONArray(sp.getString("searchServices", "[]"))
+            for (i in 0 until a.length()) add(SearchService.from(a.getJSONObject(i)))
+        }
+    }
+    var searchActiveId by mutableStateOf(sp.getString("searchActive", "") ?: "")
+    var fetchActiveId by mutableStateOf(sp.getString("fetchActive", "") ?: "")   // 空 = 与搜索相同
+    val activeSearch get() = searchServices.firstOrNull { it.id == searchActiveId } ?: searchServices.firstOrNull()
+    val activeFetch get() = searchServices.firstOrNull { it.id == fetchActiveId } ?: activeSearch
     val isCustom get() = provider == "custom"
     val activeKey get() = if (isCustom) customKey else apiKey
     val activeBase get() = if (isCustom) customUrl.trim().trimEnd('/') else Api.DEEPSEEK_BASE
@@ -150,6 +172,8 @@ class Settings(ctx: Context) {
             .putString("bgType", bgType).putInt("bgColor", bgColor).putInt("bgDim", bgDim)
             .putString("provider", provider).putString("customUrl", customUrl)
             .putString("customKey", customKey).putString("customModel", customModel)
-            .putString("customModelName", customModelName).putBoolean("customVision", customVision).apply()
+            .putString("customModelName", customModelName).putBoolean("customVision", customVision)
+            .putString("searchServices", JSONArray().also { a -> searchServices.forEach { a.put(it.toJson()) } }.toString())
+            .putString("searchActive", searchActiveId).putString("fetchActive", fetchActiveId).apply()
     }
 }

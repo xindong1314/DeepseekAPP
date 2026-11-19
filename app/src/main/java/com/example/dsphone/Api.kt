@@ -238,6 +238,63 @@ object Api {
             }.sortedBy { it.name.lowercase() }
     }
 
+    // ---------------- 联网搜索服务适配器(自定义服务商联网用) ----------------
+    suspend fun searchWith(svc: SearchService, q: String): List<Hit> = when (svc.type) {
+        "exa" -> searchExa(svc.key, q)
+        else -> searchTavily(svc.key, q)
+    }
+
+    /** 返回 (标题, Markdown 正文) */
+    suspend fun fetchWith(svc: SearchService, url: String): Pair<String, String> = when (svc.type) {
+        "exa" -> fetchExa(svc.key, url)
+        else -> fetchTavily(svc.key, url)
+    }
+
+    private const val EXA = "https://api.exa.ai"
+
+    private suspend fun searchExa(key: String, q: String): List<Hit> {
+        val body = JSONObject().put("query", q.take(400)).put("type", "auto").put("numResults", 5)
+            .put("contents", JSONObject().put("highlights", true))
+        val j = exec(Request.Builder().url("$EXA/search").header("x-api-key", key).post(body.toString().toRequestBody(JSON)).build())
+        val arr = j.optJSONArray("results") ?: return emptyList()
+        return (0 until arr.length()).map {
+            val o = arr.getJSONObject(it)
+            val hl = o.optJSONArray("highlights")
+            val snippet = if (hl != null && hl.length() > 0) (0 until hl.length()).joinToString(" … ") { i -> hl.optString(i) }
+            else o.optString("text").take(600)
+            Hit(o.optString("title").ifBlank { o.optString("url") }, o.optString("url"), snippet)
+        }
+    }
+
+    private suspend fun fetchExa(key: String, url: String): Pair<String, String> {
+        val body = JSONObject().put("urls", JSONArray().put(url)).put("text", JSONObject().put("maxCharacters", 12000))
+        val j = exec(Request.Builder().url("$EXA/contents").header("x-api-key", key).post(body.toString().toRequestBody(JSON)).build())
+        val r = j.optJSONArray("results")?.optJSONObject(0)
+            ?: throw ApiException(j.optJSONArray("statuses")?.optJSONObject(0)?.optJSONObject("error")?.optString("tag")?.ifBlank { null } ?: "无法读取该网页")
+        return r.optString("title").ifBlank { url } to r.optString("text")
+    }
+
+    private const val TAVILY = "https://api.tavily.com"
+
+    private suspend fun searchTavily(key: String, q: String): List<Hit> {
+        val j = exec(Request.Builder().url("$TAVILY/search").header("Authorization", "Bearer $key")
+            .post(JSONObject().put("query", q.take(400)).put("max_results", 5).put("search_depth", "basic").toString().toRequestBody(JSON)).build())
+        val arr = j.optJSONArray("results") ?: return emptyList()
+        return (0 until arr.length()).map {
+            val o = arr.getJSONObject(it)
+            Hit(o.optString("title"), o.optString("url"), o.optString("content"))
+        }
+    }
+
+    /** 返回 (标题(Tavily 不提供,用网址代替), Markdown 正文) */
+    private suspend fun fetchTavily(key: String, url: String): Pair<String, String> {
+        val j = exec(Request.Builder().url("$TAVILY/extract").header("Authorization", "Bearer $key")
+            .post(JSONObject().put("urls", JSONArray().put(url)).put("format", "markdown").toString().toRequestBody(JSON)).build())
+        val r = j.optJSONArray("results")?.optJSONObject(0)
+            ?: throw ApiException(j.optJSONArray("failed_results")?.optJSONObject(0)?.optString("error")?.ifBlank { null } ?: "无法读取该网页")
+        return url to r.optString("raw_content")
+    }
+
     // ---------------- 搜索 / 抓取(Pro 联网用) ----------------
     suspend fun search(key: String, q: String): List<Hit> {
         val j = postJson(key, "/v1/tools/search", JSONObject().put("query", q.take(128)).put("count", 5))

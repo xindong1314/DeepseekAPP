@@ -263,7 +263,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val model = info
         val conv = cur
         val custom = s.isCustom
-        val web = s.web && !custom
+        val web = s.web && (!custom || s.activeSearch != null)
+        val searchSvc = s.activeSearch
+        val fetchSvc = s.activeFetch
         val thinking = s.think
         val effort = s.effort
         val key = s.activeKey
@@ -298,6 +300,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     if (custom) {
                         b.put("stream_options", JSONObject().put("include_usage", true))
                         if (thinking) b.put("reasoning_effort", effort)
+                        if (withTools && clientWeb) b.put("tools", clientTools())
                         return b
                     }
                     if (thinking) b.put("thinking", JSONObject().put("type", "enabled")).put("reasoning_effort", effort)
@@ -323,7 +326,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         return sources.size
                     }
                     for (round in 0 until 6) {
-                        val res = Api.chatStream(base, key, body(round < 5), onR, onC, onS)
+                        val res = Api.chatStream(base, key, body(round < 5), onR, onC, onS, if (custom) "dsphone-${conv.id}" else null)
                         usage.add(res.usage)
                         if (res.toolCalls.isEmpty()) break
                         val am = JSONObject().put("role", "assistant").put("content", res.content.toString())
@@ -344,7 +347,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                     "web_search" -> {
                                         val q = args.optString("query")
                                         m.status = "🔍 正在搜索:$q"
-                                        val hits = Api.search(key, q)
+                                        val hits = if (custom) Api.searchWith(searchSvc!!, q) else Api.search(key, q)
                                         if (hits.isNotEmpty()) searches++
                                         if (hits.isEmpty()) "没有搜索结果" else hits.joinToString("\n\n") { h ->
                                             "[${register(h.title, h.url)}] ${h.title}\n${h.url}\n${h.summary}"
@@ -353,7 +356,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                     "fetch_url" -> {
                                         val u = args.optString("url")
                                         m.status = "📄 正在阅读:$u"
-                                        val (t, c) = Api.fetch(key, u)
+                                        val (t, c) = if (custom) Api.fetchWith(fetchSvc!!, u) else Api.fetch(key, u)
                                         fetches++
                                         "[${register(t, u)}] $t\n${c.take(8000)}"
                                     }

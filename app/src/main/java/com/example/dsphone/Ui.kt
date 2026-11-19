@@ -474,13 +474,13 @@ fun Dock(vm: ChatViewModel) {
                 // 点一下按 关 → 低 → 高 → 最大 循环;按钮形状固定,只变文字和颜色
                 Pill(selected = s.think, onClick = { s.cycleEffort() }, icon = Icons.Outlined.Psychology, text = "深度思考",
                     trailing = if (s.think) effortCn(s.effort) else if (s.isCustom) "默认" else "关")
-                if (!s.isCustom) {
                 Spacer(Modifier.width(6.dp))
-                Pill(selected = s.web, onClick = {
+                Pill(selected = s.web && (!s.isCustom || s.activeSearch != null), onClick = {
+                    if (s.isCustom && s.activeSearch == null) { vm.toast("请先在设置里添加联网搜索服务(Tavily / Exa)"); return@Pill }
                     s.web = !s.web; s.save()
-                    if (s.web && !vm.info.serverWeb) vm.toast("Pro 联网:由手机端调用搜索/抓取接口(各 5 元/千次)")
+                    if (s.web && s.isCustom) vm.toast("联网:由手机端调用「${s.activeSearch?.name}」搜索/抓取,需要所选模型支持工具调用")
+                    else if (s.web && !vm.info.serverWeb) vm.toast("Pro 联网:由手机端调用搜索/抓取接口(各 5 元/千次)")
                 }, icon = Icons.Outlined.Language, text = "智能搜索")
-                }
                 Spacer(Modifier.weight(1f))
                 RoundBtn(if (panel) Icons.Outlined.Close else Icons.Outlined.Add, filled = false) { panel = !panel }
                 Spacer(Modifier.width(6.dp))
@@ -756,6 +756,9 @@ fun SettingsPage(vm: ChatViewModel, onBack: () -> Unit) {
     var key by remember { mutableStateOf(s.apiKey) }
     var showModels by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
+    var editSvc by remember { mutableStateOf<SearchService?>(null) }
+    var addSvc by remember { mutableStateOf(false) }
+    var pickFetch by remember { mutableStateOf(false) }
     val pickBg = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { it?.let(vm::setBackgroundImage) }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { it?.let(vm::exportTo) }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(vm::importFrom) }
@@ -783,7 +786,7 @@ fun SettingsPage(vm: ChatViewModel, onBack: () -> Unit) {
                         }
                     }
                 }
-                if (s.isCustom) Note("自定义:任意 OpenAI 兼容接口(如 OpenCode Go)。联网搜索、文件解析/OCR、语音输入、余额和费用估算是 DeepSeek 官方接口专有的功能,在这里不可用;图片会直接发给模型,模型不支持时会报错。")
+                if (s.isCustom) Note("自定义:任意 OpenAI 兼容接口(如 OpenCode Go)。文件解析/OCR、语音输入、余额和费用估算是 DeepSeek 官方接口专有的功能,在这里不可用;联网搜索需要在下面添加搜索服务(Tavily / Exa);图片会直接发给模型,模型不支持时会报错。")
             }
             if (s.isCustom) {
                 GroupLabel("自定义服务商")
@@ -811,6 +814,30 @@ fun SettingsPage(vm: ChatViewModel, onBack: () -> Unit) {
                         ValueText(s.customModelName.ifBlank { s.customModel }.ifBlank { "点击选择" }); Text("  ›", fontSize = 22.sp, color = Color(0xFFC0C2CA))
                     }
                     Note("接口地址填到 /v1 为止(程序会在后面加 /chat/completions 和 /models),默认值是 OpenCode Go 的 OpenAI 兼容地址,若不通请对照官方文档修改。点“模型”可从接口拉取列表。")
+                }
+            }
+
+            if (s.isCustom) {
+                GroupLabel("联网搜索服务")
+                Group {
+                    s.searchServices.forEach { svc ->
+                        val active = s.activeSearch?.id == svc.id
+                        SRow(
+                            svc.name.ifBlank { "未命名" }, sub = SEARCH_TYPES.firstOrNull { it.first == svc.type }?.second ?: svc.type,
+                            onClick = { s.searchActiveId = svc.id; s.save() },
+                        ) {
+                            if (active) Icon(Icons.Outlined.Check, "当前使用", Modifier.size(20.dp), tint = Pri)
+                            TextButton({ editSvc = svc }) { Text("编辑") }
+                        }
+                    }
+                    if (s.searchServices.size > 1) {
+                        SRow("抓取网页使用", onClick = { pickFetch = true }) {
+                            ValueText(if (s.fetchActiveId.isBlank()) "与搜索相同" else s.activeFetch?.name ?: "与搜索相同")
+                            Text("  ›", fontSize = 22.sp, color = Color(0xFFC0C2CA))
+                        }
+                    }
+                    SRow("添加搜索服务", divider = false, onClick = { addSvc = true }) { Text("＋", fontSize = 22.sp, color = Pri) }
+                    Note("点一项设为当前使用(对勾),聊天里的“智能搜索”就用它。可添加多个,例如 Tavily 和 Exa。需要所选模型支持工具调用。")
                 }
             }
 
@@ -907,12 +934,83 @@ fun SettingsPage(vm: ChatViewModel, onBack: () -> Unit) {
         title = { Text(vm.portStatus, fontSize = 16.sp) },
         text = { LinearProgressIndicator(Modifier.fillMaxWidth(), color = Pri) },
     )
+    if (addSvc || editSvc != null) SearchServiceDialog(
+        init = editSvc,
+        onSave = { svc ->
+            val i = s.searchServices.indexOfFirst { it.id == svc.id }
+            if (i >= 0) s.searchServices[i] = svc else { s.searchServices.add(svc); if (s.searchServices.size == 1) s.searchActiveId = svc.id }
+            s.save(); addSvc = false; editSvc = null
+        },
+        onDelete = editSvc?.let { cur ->
+            {
+                s.searchServices.removeAll { it.id == cur.id }
+                if (s.searchActiveId == cur.id) s.searchActiveId = s.searchServices.firstOrNull()?.id ?: ""
+                if (s.fetchActiveId == cur.id) s.fetchActiveId = ""
+                s.save(); editSvc = null
+            }
+        },
+        onDismiss = { addSvc = false; editSvc = null },
+    )
+    if (pickFetch) AlertDialog(
+        onDismissRequest = { pickFetch = false }, containerColor = Color.White,
+        title = { Text("抓取网页使用") },
+        text = {
+            Column {
+                (listOf<SearchService?>(null) + s.searchServices).forEach { svc ->
+                    val on = if (svc == null) s.fetchActiveId.isBlank() else s.fetchActiveId == svc.id
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { s.fetchActiveId = svc?.id ?: ""; s.save(); pickFetch = false }.padding(vertical = 12.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(svc?.name?.ifBlank { "未命名" } ?: "与搜索相同", fontSize = 16.sp, modifier = Modifier.weight(1f))
+                        if (on) Icon(Icons.Outlined.Check, null, Modifier.size(20.dp), tint = Pri)
+                    }
+                }
+            }
+        },
+        confirmButton = {}, dismissButton = { TextButton({ pickFetch = false }) { Text("取消") } },
+    )
     if (confirmClear) AlertDialog(
         onDismissRequest = { confirmClear = false },
         title = { Text("清空所有对话?") },
         text = { Text("聊天记录和其中的图片会从本机删除,无法恢复。") },
         confirmButton = { TextButton({ vm.clearAll(); confirmClear = false }) { Text("清空", color = Color(0xFFD93025)) } },
         dismissButton = { TextButton({ confirmClear = false }) { Text("取消") } },
+    )
+}
+
+@Composable
+private fun SearchServiceDialog(init: SearchService?, onSave: (SearchService) -> Unit, onDelete: (() -> Unit)?, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf(init?.name ?: "") }
+    var type by remember { mutableStateOf(init?.type ?: SEARCH_TYPES.first().first) }
+    var key by remember { mutableStateOf(init?.key ?: "") }
+    AlertDialog(
+        onDismissRequest = onDismiss, containerColor = Color.White,
+        title = { Text(if (init == null) "添加搜索服务" else "编辑搜索服务") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SEARCH_TYPES.forEach { (id, label) -> FilterChip(type == id, { type = id }, { Text(label) }) }
+                }
+                OutlinedTextField(name, { name = it }, label = { Text("名称(可留空)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    key, { key = it.trim() }, label = { Text("API Key") }, singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                { onSave(SearchService(init?.id ?: java.util.UUID.randomUUID().toString(), name.ifBlank { SEARCH_TYPES.first { it.first == type }.second }, type, key)) },
+                enabled = key.isNotBlank(),
+            ) { Text("保存") }
+        },
+        dismissButton = {
+            Row {
+                if (onDelete != null) TextButton(onDelete) { Text("删除", color = Color(0xFFE53935)) }
+                TextButton(onDismiss) { Text("取消") }
+            }
+        },
     )
 }
 
