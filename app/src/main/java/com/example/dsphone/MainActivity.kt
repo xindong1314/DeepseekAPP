@@ -10,7 +10,10 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 
@@ -24,8 +27,18 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.light(AColor.TRANSPARENT, AColor.TRANSPARENT),
         )
         setContent {
-            MaterialTheme(colorScheme = lightColorScheme(primary = Pri, surface = Color.White, background = Color.White)) {
-                Surface(Modifier.fillMaxSize(), color = Color.White) { App(vm) }
+            val sys = isSystemInDarkTheme()
+            val dark = when (vm.s.themeMode) { "dark" -> true; "light" -> false; else -> sys }
+            if (Pal.dark != dark) Pal.dark = dark
+            DisposableEffect(dark) {
+                val style = if (dark) SystemBarStyle.dark(AColor.TRANSPARENT) else SystemBarStyle.light(AColor.TRANSPARENT, AColor.TRANSPARENT)
+                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                onDispose {}
+            }
+            val scheme = if (dark) darkColorScheme(primary = Pri, surface = Bg, background = Bg, onSurface = Ink, onBackground = Ink)
+            else lightColorScheme(primary = Pri, surface = Bg, background = Bg)
+            MaterialTheme(colorScheme = scheme) {
+                Surface(Modifier.fillMaxSize(), color = Bg) { App(vm) }
             }
         }
     }

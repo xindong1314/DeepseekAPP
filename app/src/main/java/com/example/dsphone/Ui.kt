@@ -78,14 +78,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-val Pri = Color(0xFF4D6BFE)
-val PriCont = Color(0xFFE7EDFF)
-val PriBorder = Color(0xFFC7D4FF)
-val PriText = Color(0xFF2F4BD8)
-val Grey = Color(0xFFF4F4F6)
-val Mut = Color(0xFF8B8D98)
-val LineC = Color(0xFFE3E4EA)
-val Ink = Color(0xFF16171A)
 
 private val BG_CHOICES: List<List<Color>> = listOf(
     listOf(Color(0xFFEEF3FF)), listOf(Color(0xFFFFF1F3)), listOf(Color(0xFFEFFAF2)), listOf(Color(0xFFFFF8E6)),
@@ -93,7 +85,7 @@ private val BG_CHOICES: List<List<Color>> = listOf(
 )
 
 private fun brushOf(i: Int): Brush {
-    val c = BG_CHOICES[i.coerceIn(0, BG_CHOICES.lastIndex)]
+    val c = BG_CHOICES[i.coerceIn(0, BG_CHOICES.lastIndex)].map { if (Pal.dark) androidx.compose.ui.graphics.lerp(it, Color.Black, 0.75f) else it }
     return if (c.size == 1) SolidColor(c[0]) else Brush.linearGradient(c)
 }
 
@@ -150,7 +142,7 @@ fun App(vm: ChatViewModel) {
                 onSettings = { scope.launch { drawer.close() }; showSettings = true })
         },
     ) {
-        Box(Modifier.fillMaxSize().background(Color.White)) {
+        Box(Modifier.fillMaxSize().background(Bg)) {
             ChatBackground(vm)
             Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
                 if (vm.selecting) SelectTopBar(vm) else TopBar(vm, onMenu = { scope.launch { drawer.open() } }, onTitle = { showModels = true })
@@ -179,7 +171,7 @@ fun ChatBackground(vm: ChatViewModel) {
                     }
                 }
                 bmp?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-                Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = vm.s.bgDim / 100f)))
+                Box(Modifier.fillMaxSize().background(Bg.copy(alpha = vm.s.bgDim / 100f)))
             }
         }
     }
@@ -218,7 +210,7 @@ fun SelectTopBar(vm: ChatViewModel) {
 
 @Composable
 fun SelectBottomBar(vm: ChatViewModel) {
-    Column(Modifier.fillMaxWidth().background(Color.White).navigationBarsPadding()) {
+    Column(Modifier.fillMaxWidth().background(Bg).navigationBarsPadding()) {
         HorizontalDivider(color = LineC)
         Button(
             { vm.deleteSelected() }, Modifier.fillMaxWidth().padding(16.dp).height(52.dp), enabled = vm.selected.isNotEmpty(),
@@ -275,7 +267,7 @@ fun MessageList(vm: ChatViewModel, onSpeak: (String) -> Unit, modifier: Modifier
         AnimatedVisibility(showJump, Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 12.dp), enter = fadeIn(), exit = fadeOut()) {
             Surface(
                 Modifier.size(40.dp).clickable { follow = true; scope.launch { state.animateScrollToItem(msgs.size) } },
-                shape = CircleShape, color = Color.White, shadowElevation = 4.dp, border = BorderStroke(1.dp, LineC),
+                shape = CircleShape, color = Bg, shadowElevation = 4.dp, border = BorderStroke(1.dp, LineC),
             ) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.KeyboardArrowDown, "回到底部", Modifier.size(24.dp), tint = Ink) } }
         }
     }
@@ -285,7 +277,7 @@ fun MessageList(vm: ChatViewModel, onSpeak: (String) -> Unit, modifier: Modifier
 fun UserBubble(m: Msg, onEdit: (() -> Unit)? = null) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Column(
-            Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp)).background(Color(0xFFF0F1F5))
+            Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp)).background(UserBg)
                 .then(if (onEdit != null) Modifier.clickable(onClick = onEdit) else Modifier).padding(horizontal = 14.dp, vertical = 10.dp),
         ) {
             m.attachments.forEach { a ->
@@ -310,7 +302,7 @@ fun AssistantBlock(m: Msg, backing: Boolean, onSpeak: (String) -> Unit, vm: Chat
     var pick by remember { mutableStateOf(false) }
     val clip = LocalClipboardManager.current
     val ctx = LocalContext.current
-    val box = if (backing) Modifier.clip(RoundedCornerShape(18.dp)).background(Color.White.copy(alpha = 0.8f)).padding(12.dp, 12.dp, 12.dp, 4.dp) else Modifier
+    val box = if (backing) Modifier.clip(RoundedCornerShape(18.dp)).background(Bg.copy(alpha = 0.8f)).padding(12.dp, 12.dp, 12.dp, 4.dp) else Modifier
     Box {
     Column(
         Modifier.fillMaxWidth().then(box).combinedClickable(
@@ -326,22 +318,22 @@ fun AssistantBlock(m: Msg, backing: Boolean, onSpeak: (String) -> Unit, vm: Chat
         if (!m.streaming && m.content.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().offset(x = (-8).dp)) {
                 IconButton({ clip.setText(AnnotatedString(plainText(m.content))); Toast.makeText(ctx, "已复制", Toast.LENGTH_SHORT).show() }, Modifier.size(40.dp)) {
-                    Icon(Icons.Outlined.ContentCopy, "复制", Modifier.size(22.dp), tint = Color(0xFF5D5F6B))
+                    Icon(Icons.Outlined.ContentCopy, "复制", Modifier.size(22.dp), tint = IconC)
                 }
                 IconButton({ onSpeak(m.content) }, Modifier.size(40.dp)) {
-                    Icon(Icons.Outlined.VolumeUp, "朗读", Modifier.size(22.dp), tint = Color(0xFF5D5F6B))
+                    Icon(Icons.Outlined.VolumeUp, "朗读", Modifier.size(22.dp), tint = IconC)
                 }
                 if (isLast && !vm.busy) {
                     Spacer(Modifier.weight(1f))
                     IconButton({ vm.regenerate() }, Modifier.size(40.dp)) {
-                        Icon(Icons.Outlined.Refresh, "重新生成", Modifier.size(22.dp), tint = Color(0xFF5D5F6B))
+                        Icon(Icons.Outlined.Refresh, "重新生成", Modifier.size(22.dp), tint = IconC)
                     }
                 }
             }
             if (m.costText.isNotEmpty()) Text(m.costText, fontSize = 11.5.sp, color = Mut)
         }
     }
-    DropdownMenu(menu, { menu = false }, containerColor = Color.White) {
+    DropdownMenu(menu, { menu = false }, containerColor = Bg) {
         DropdownMenuItem({ Text("选取文字") }, { menu = false; pick = true }, leadingIcon = { Icon(Icons.Outlined.SelectAll, null) })
         DropdownMenuItem(
             { Text("删除", color = Color(0xFFE53935)) }, { menu = false; vm.beginSelect(m) },
@@ -350,7 +342,7 @@ fun AssistantBlock(m: Msg, backing: Boolean, onSpeak: (String) -> Unit, vm: Chat
     }
     }
     if (pick) androidx.compose.ui.window.Dialog({ pick = false }) {
-        Surface(shape = RoundedCornerShape(24.dp), color = Color.White) {
+        Surface(shape = RoundedCornerShape(24.dp), color = Bg) {
             Column(Modifier.padding(20.dp)) {
                 Text("选取文字(长按选择)", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 10.dp))
                 Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
@@ -400,7 +392,7 @@ fun SourcesBlock(sources: List<Source>) {
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) {
             sources.take(4).forEachIndexed { i, _ ->
-                Box(Modifier.size(20.dp).clip(CircleShape).background(DOT_COLORS[i % 4]).border(2.dp, Color.White, CircleShape))
+                Box(Modifier.size(20.dp).clip(CircleShape).background(DOT_COLORS[i % 4]).border(2.dp, Bg, CircleShape))
             }
         }
         Spacer(Modifier.width(8.dp))
@@ -437,22 +429,22 @@ fun Dock(vm: ChatViewModel) {
                 .padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Outlined.Info, null, Modifier.size(18.dp), tint = if (vm.error != null) Color(0xFFD93025) else Color(0xFF797B87))
+            Icon(Icons.Outlined.Info, null, Modifier.size(18.dp), tint = if (vm.error != null) Color(0xFFD93025) else Mut)
             Spacer(Modifier.width(8.dp))
             Text(
                 vm.error?.let { it + if (noMoney) "  → 点此去充值" else "" } ?: if (vm.s.isCustom) "本对话额度 ${Cost.allow(vm.cur.allowance)} · 累计额度 ${Cost.allow(vm.totalAllowance)}"
                     else "本对话 ${Cost.yuan(vm.cur.cost)} · 累计 ${Cost.yuan(vm.total)} · ${if (Cost.isPeak()) "⏰ 高峰价" else "🌙 空闲价"}",
-                fontSize = 13.sp, color = if (vm.error != null) Color(0xFFD93025) else Color(0xFF797B87), lineHeight = 18.sp,
+                fontSize = 13.sp, color = if (vm.error != null) Color(0xFFD93025) else Mut, lineHeight = 18.sp,
             )
         }
         // 输入卡
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Color.White).padding(14.dp, 12.dp, 14.dp, 10.dp)) {
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Bg).padding(14.dp, 12.dp, 14.dp, 10.dp)) {
             if (vm.editing != null) {
                 Row(
                     Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(RoundedCornerShape(10.dp)).background(Grey).padding(start = 12.dp, end = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("修改输入", fontSize = 14.sp, color = Color(0xFF5D5F6B), modifier = Modifier.weight(1f))
+                    Text("修改输入", fontSize = 14.sp, color = IconC, modifier = Modifier.weight(1f))
                     IconButton({ vm.cancelEdit() }, Modifier.size(36.dp)) { Icon(Icons.Outlined.Close, "取消修改", Modifier.size(18.dp)) }
                 }
             }
@@ -467,7 +459,7 @@ fun Dock(vm: ChatViewModel) {
                 textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, color = Ink, lineHeight = 24.sp),
                 cursorBrush = SolidColor(Pri), maxLines = 6,
                 decorationBox = { inner ->
-                    Box { if (vm.input.isEmpty()) Text("发消息或按住说话", fontSize = 16.sp, color = Color(0xFFB3B5BE)); inner() }
+                    Box { if (vm.input.isEmpty()) Text("发消息或按住说话", fontSize = 16.sp, color = HintC); inner() }
                 },
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -493,16 +485,16 @@ fun Dock(vm: ChatViewModel) {
             }
         }
         AnimatedVisibility(panel) { AttachPanel(vm) { panel = false } }
-        Text("回答由 AI 生成,仅供参考", fontSize = 11.5.sp, color = Color(0xFFC0C2CA), textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
+        Text("回答由 AI 生成,仅供参考", fontSize = 11.5.sp, color = ChevC, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
     }
 }
 
 @Composable
 fun Pill(selected: Boolean, onClick: () -> Unit, icon: ImageVector, text: String, trailing: String? = null) {
     val shape = RoundedCornerShape(19.dp)
-    val fg = if (selected) PriText else Color(0xFF5D5F6B)
+    val fg = if (selected) PriText else IconC
     Row(
-        Modifier.height(36.dp).clip(shape).background(if (selected) PriCont else Color.White)
+        Modifier.height(36.dp).clip(shape).background(if (selected) PriCont else Bg)
             .border(1.dp, if (selected) PriBorder else LineC, shape).clickable(onClick = onClick).padding(start = 8.dp, end = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -520,7 +512,7 @@ fun Pill(selected: Boolean, onClick: () -> Unit, icon: ImageVector, text: String
 @Composable
 fun RoundBtn(icon: ImageVector, filled: Boolean, onClick: () -> Unit) {
     Box(
-        Modifier.size(36.dp).clip(CircleShape).background(if (filled) Pri else Color.White)
+        Modifier.size(36.dp).clip(CircleShape).background(if (filled) Pri else Bg)
             .border(1.8.dp, if (filled) Pri else Ink, CircleShape).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { Icon(icon, null, Modifier.size(19.dp), tint = if (filled) Color.White else Ink) }
@@ -552,7 +544,7 @@ fun HoldToTalk(vm: ChatViewModel, onDone: () -> Unit) {
     LaunchedEffect(recording) { secs = 0; while (recording) { delay(1000); secs++ } }
     Box(
         Modifier.fillMaxWidth().padding(bottom = 8.dp).height(46.dp).clip(RoundedCornerShape(12.dp))
-            .background(if (recording) Color(0xFFFFE3E1) else Grey)
+            .background(if (recording) RecBg else Grey)
             .pointerInput(Unit) {
                 detectTapGestures(onPress = {
                     if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -571,7 +563,7 @@ fun HoldToTalk(vm: ChatViewModel, onDone: () -> Unit) {
     ) {
         Text(
             when { vm.transcribing -> "识别中…"; recording -> "录音中 $secs 秒 · 松开结束(最长 120 秒)"; else -> "按住 说话" },
-            fontWeight = FontWeight.SemiBold, color = if (recording) Color(0xFFD93025) else Color(0xFF555555),
+            fontWeight = FontWeight.SemiBold, color = if (recording) Color(0xFFD93025) else IconC,
         )
     }
 }
@@ -607,7 +599,7 @@ fun AttachPanel(vm: ChatViewModel, onClose: () -> Unit) {
 @Composable
 fun BigBtn(icon: ImageVector, label: String, modifier: Modifier, onClick: () -> Unit) {
     Column(
-        modifier.height(76.dp).clip(RoundedCornerShape(18.dp)).background(Color.White).clickable(onClick = onClick),
+        modifier.height(76.dp).clip(RoundedCornerShape(18.dp)).background(Bg).clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
     ) {
         Icon(icon, label, Modifier.size(26.dp), tint = Ink)
@@ -645,13 +637,13 @@ fun PhotoStrip(vm: ChatViewModel) {
                 value = withContext(Dispatchers.IO) { runCatching { ctx.contentResolver.loadThumbnail(u, Size(240, 300), null).asImageBitmap() }.getOrNull() }
             }
             Box(
-                Modifier.size(92.dp, 112.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFFE6E7EC))
+                Modifier.size(92.dp, 112.dp).clip(RoundedCornerShape(14.dp)).background(Grey)
                     .clickable { if (sel != null) vm.removePending(sel) else vm.addUris(listOf(u)) },
             ) {
                 thumb?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                 Box(
                     Modifier.align(Alignment.TopEnd).padding(6.dp).size(22.dp).clip(CircleShape)
-                        .background(if (sel != null) Pri else Color(0x44000000)).border(2.dp, Color.White, CircleShape),
+                        .background(if (sel != null) Pri else Color(0x44000000)).border(2.dp, Bg, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) { if (sel != null) Text("✓", color = Color.White, fontSize = 12.sp) }
             }
@@ -662,7 +654,7 @@ fun PhotoStrip(vm: ChatViewModel) {
 // ---------------------------------------------------------------- 浮层
 @Composable
 fun ModelSheet(vm: ChatViewModel, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color.White) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Bg) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 28.dp)) {
             Text("选择模型", color = Mut, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp))
             if (vm.s.isCustom) {
@@ -713,8 +705,6 @@ fun Swatch(bg: Modifier, selected: Boolean, onClick: () -> Unit) {
 }
 
 // ---------------------------------------------------------------- 设置页(整页分组列表)
-private val PageBg = Color(0xFFF6F6F9)
-private val RowLine = Color(0xFFF0F0F4)
 
 @Composable
 private fun GroupLabel(t: String) =
@@ -722,7 +712,7 @@ private fun GroupLabel(t: String) =
 
 @Composable
 private fun Group(content: @Composable ColumnScope.() -> Unit) =
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color.White), content = content)
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Bg), content = content)
 
 @Composable
 private fun Note(t: String) = Text(t, fontSize = 12.sp, color = Mut, lineHeight = 18.sp, modifier = Modifier.padding(16.dp, 8.dp, 16.dp, 12.dp))
@@ -780,7 +770,7 @@ fun SettingsPage(vm: ChatViewModel, onBack: () -> Unit) {
                     Row(Modifier.clip(RoundedCornerShape(10.dp)).background(Grey).padding(3.dp)) {
                         listOf("deepseek" to "DeepSeek 官方", "custom" to "自定义").forEach { (id, label) ->
                             Box(
-                                Modifier.clip(RoundedCornerShape(8.dp)).background(if (s.provider == id) Color.White else Color.Transparent)
+                                Modifier.clip(RoundedCornerShape(8.dp)).background(if (s.provider == id) Bg else Color.Transparent)
                                     .clickable { s.provider = id; s.save(); vm.refreshBalance() }.padding(horizontal = 12.dp, vertical = 6.dp),
                             ) { Text(label, fontSize = 14.sp, color = if (s.provider == id) Ink else Mut) }
                         }
@@ -804,14 +794,14 @@ fun SettingsPage(vm: ChatViewModel, onBack: () -> Unit) {
                             textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, color = Ink, textAlign = TextAlign.End),
                             decorationBox = { inner ->
                                 Box(contentAlignment = Alignment.CenterEnd) {
-                                    if (s.customKey.isEmpty()) Text("粘贴 Key", fontSize = 16.sp, color = Color(0xFFB3B5BE))
+                                    if (s.customKey.isEmpty()) Text("粘贴 Key", fontSize = 16.sp, color = HintC)
                                     inner()
                                 }
                             },
                         )
                     }
                     SRow("模型", divider = false, onClick = { showModels = true }) {
-                        ValueText(s.customModelName.ifBlank { s.customModel }.ifBlank { "点击选择" }); Text("  ›", fontSize = 22.sp, color = Color(0xFFC0C2CA))
+                        ValueText(s.customModelName.ifBlank { s.customModel }.ifBlank { "点击选择" }); Text("  ›", fontSize = 22.sp, color = ChevC)
                     }
                     Note("接口地址填到 /v1 为止(程序会在后面加 /chat/completions 和 /models),默认值是 OpenCode Go 的 OpenAI 兼容地址,若不通请对照官方文档修改。点“模型”可从接口拉取列表。")
                 }
@@ -833,7 +823,7 @@ fun SettingsPage(vm: ChatViewModel, onBack: () -> Unit) {
                     if (s.searchServices.size > 1) {
                         SRow("抓取网页使用", onClick = { pickFetch = true }) {
                             ValueText(if (s.fetchActiveId.isBlank()) "与搜索相同" else s.activeFetch?.name ?: "与搜索相同")
-                            Text("  ›", fontSize = 22.sp, color = Color(0xFFC0C2CA))
+                            Text("  ›", fontSize = 22.sp, color = ChevC)
                         }
                     }
                     SRow("添加搜索服务", divider = false, onClick = { addSvc = true }) { Text("＋", fontSize = 22.sp, color = Pri) }
@@ -850,7 +840,7 @@ fun SettingsPage(vm: ChatViewModel, onBack: () -> Unit) {
                         textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, color = Ink, textAlign = TextAlign.End),
                         decorationBox = { inner ->
                             Box(contentAlignment = Alignment.CenterEnd) {
-                                if (key.isEmpty()) Text("sk-…", fontSize = 16.sp, color = Color(0xFFB3B5BE))
+                                if (key.isEmpty()) Text("sk-…", fontSize = 16.sp, color = HintC)
                                 inner()
                             }
                         },
@@ -873,14 +863,14 @@ fun SettingsPage(vm: ChatViewModel, onBack: () -> Unit) {
                         Text(bal.items.joinToString(" / ") { it.symbol + it.total }, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = if (bal.available) Ink else Color(0xFFD93025))
                 }
                 SRow("去充值", "跳转官方充值页,支付不经过本应用", divider = false, onClick = { openTopUp() }) {
-                    Text("›", fontSize = 22.sp, color = Color(0xFFC0C2CA))
+                    Text("›", fontSize = 22.sp, color = ChevC)
                 }
                 Note("Key 只保存在本机应用的私有目录,修改后自动保存。官方没有开放充值接口,充值需在网页完成。")
             }
 
             GroupLabel("通用")
             Group {
-                SRow("默认模型", onClick = { showModels = true }) { ValueText(vm.info.name); Text("  ›", fontSize = 22.sp, color = Color(0xFFC0C2CA)) }
+                SRow("默认模型", onClick = { showModels = true }) { ValueText(vm.info.name); Text("  ›", fontSize = 22.sp, color = ChevC) }
                 SRow("自动朗读回答", divider = false) {
                     Switch(s.speak, { s.speak = it; s.save() }, colors = SwitchDefaults.colors(checkedTrackColor = Pri))
                 }
@@ -888,16 +878,26 @@ fun SettingsPage(vm: ChatViewModel, onBack: () -> Unit) {
 
             GroupLabel("聊天背景")
             Group {
+                SRow("外观") {
+                    Row(Modifier.clip(RoundedCornerShape(10.dp)).background(Grey).padding(3.dp)) {
+                        listOf("system" to "跟随系统", "light" to "浅色", "dark" to "深色").forEach { (id, label) ->
+                            Box(
+                                Modifier.clip(RoundedCornerShape(8.dp)).background(if (s.themeMode == id) Bg else Color.Transparent)
+                                    .clickable { s.themeMode = id; s.save() }.padding(horizontal = 10.dp, vertical = 6.dp),
+                            ) { Text(label, fontSize = 14.sp, color = if (s.themeMode == id) Ink else Mut) }
+                        }
+                    }
+                }
                 SRow("颜色") {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Swatch(Modifier.background(Color.White), s.bgType == "none") { s.bgType = "none"; s.save() }
+                        Swatch(Modifier.background(Bg), s.bgType == "none") { s.bgType = "none"; s.save() }
                         BG_CHOICES.indices.forEach { i ->
                             Swatch(Modifier.background(brushOf(i)), s.bgType == "color" && s.bgColor == i) { s.bgType = "color"; s.bgColor = i; s.save() }
                         }
                     }
                 }
                 SRow("从相册选择图片", onClick = { pickBg.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
-                    Text("›", fontSize = 22.sp, color = Color(0xFFC0C2CA))
+                    Text("›", fontSize = 22.sp, color = ChevC)
                 }
                 if (s.bgType == "image") SRow("图片遮罩") {
                     Slider(s.bgDim / 100f, { s.bgDim = (it * 100).toInt() }, Modifier.width(170.dp), valueRange = 0f..0.85f, onValueChangeFinished = { s.save() })
@@ -919,10 +919,10 @@ fun SettingsPage(vm: ChatViewModel, onBack: () -> Unit) {
             Group {
                 SRow("导出聊天记录", "含图片,格式与 DeepSeek 官方导出一致", onClick = {
                     exportLauncher.launch("deepseek_data-${SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())}.zip")
-                }) { Text("›", fontSize = 22.sp, color = Color(0xFFC0C2CA)) }
+                }) { Text("›", fontSize = 22.sp, color = ChevC) }
                 SRow("导入聊天记录", "选择 DeepSeek 官方导出的 .zip,重复导入会自动跳过", onClick = {
                     importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
-                }) { Text("›", fontSize = 22.sp, color = Color(0xFFC0C2CA)) }
+                }) { Text("›", fontSize = 22.sp, color = ChevC) }
                 SRow("清空所有对话", labelColor = Color(0xFFD93025), divider = false, onClick = { confirmClear = true })
             }
         }
@@ -952,7 +952,7 @@ fun SettingsPage(vm: ChatViewModel, onBack: () -> Unit) {
         onDismiss = { addSvc = false; editSvc = null },
     )
     if (pickFetch) AlertDialog(
-        onDismissRequest = { pickFetch = false }, containerColor = Color.White,
+        onDismissRequest = { pickFetch = false }, containerColor = Bg,
         title = { Text("抓取网页使用") },
         text = {
             Column {
@@ -985,7 +985,7 @@ private fun SearchServiceDialog(init: SearchService?, onSave: (SearchService) ->
     var type by remember { mutableStateOf(init?.type ?: SEARCH_TYPES.first().first) }
     var key by remember { mutableStateOf(init?.key ?: "") }
     AlertDialog(
-        onDismissRequest = onDismiss, containerColor = Color.White,
+        onDismissRequest = onDismiss, containerColor = Bg,
         title = { Text(if (init == null) "添加搜索服务" else "编辑搜索服务") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1048,7 +1048,7 @@ fun HistoryDrawer(vm: ChatViewModel, onClose: () -> Unit, onSettings: () -> Unit
         out
     }
 
-    ModalDrawerSheet(Modifier.width(310.dp), drawerContainerColor = Color.White) {
+    ModalDrawerSheet(Modifier.width(310.dp), drawerContainerColor = Bg) {
         Column(Modifier.fillMaxHeight().statusBarsPadding().padding(top = 14.dp)) {
             if (selecting) {
                 Row(Modifier.fillMaxWidth().padding(18.dp, 4.dp, 14.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1092,7 +1092,7 @@ fun HistoryDrawer(vm: ChatViewModel, onClose: () -> Unit, onSettings: () -> Unit
                                         Text("${dateFmt.format(Date(c.updated))} · " + (if (c.cost > 0 || c.allowance == 0.0) Cost.yuan(c.cost) else "") + (if (c.allowance > 0) (if (c.cost > 0) " · " else "") + "额度 ${Cost.allow(c.allowance)}" else ""), fontSize = 12.sp, color = Mut)
                                     }
                                 }
-                                DropdownMenu(menuFor === c, { menuFor = null }, offset = androidx.compose.ui.unit.DpOffset(60.dp, 0.dp), containerColor = Color.White) {
+                                DropdownMenu(menuFor === c, { menuFor = null }, offset = androidx.compose.ui.unit.DpOffset(60.dp, 0.dp), containerColor = Bg) {
                                     DropdownMenuItem({ Text("重命名") }, { menuFor = null; renaming = c }, leadingIcon = { Icon(Icons.Outlined.Edit, null) })
                                     DropdownMenuItem(
                                         { Text(if (c.pinned) "取消置顶" else "置顶") }, { menuFor = null; vm.setPinned(listOf(c), !c.pinned) },
@@ -1142,12 +1142,12 @@ fun HistoryDrawer(vm: ChatViewModel, onClose: () -> Unit, onSettings: () -> Unit
             text = { OutlinedTextField(text, { text = it }, singleLine = true, modifier = Modifier.fillMaxWidth()) },
             confirmButton = { TextButton({ vm.rename(c, text); renaming = null }, enabled = text.isNotBlank()) { Text("确定") } },
             dismissButton = { TextButton({ renaming = null }) { Text("取消") } },
-            containerColor = Color.White,
+            containerColor = Bg,
         )
     }
     deleting?.let { list ->
         androidx.compose.ui.window.Dialog({ deleting = null }) {
-            Surface(shape = RoundedCornerShape(24.dp), color = Color.White) {
+            Surface(shape = RoundedCornerShape(24.dp), color = Bg) {
                 Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(if (list.size == 1) "删除后,该对话将不可恢复" else "删除选择的 ${list.size} 个对话?", fontSize = 18.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(8.dp))

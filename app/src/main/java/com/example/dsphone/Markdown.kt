@@ -149,9 +149,9 @@ private fun inline(s: String): AnnotatedString = buildAnnotatedString {
         when {
             g[1] != null -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(m.groupValues[1]) }
             g[2] != null -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) { append(m.groupValues[2]) }
-            g[3] != null -> withStyle(SpanStyle(fontSize = 11.sp, color = Color(0xFF7A7D89), background = Color(0xFFEEF0F4))) { append(" ${m.groupValues[3]} ") }
+            g[3] != null -> withStyle(SpanStyle(fontSize = 11.sp, color = Mut, background = Grey)) { append(" ${m.groupValues[3]} ") }
             g[4] != null -> withLink(LinkAnnotation.Url(m.groupValues[5], TextLinkStyles(SpanStyle(color = Pri, textDecoration = TextDecoration.Underline)))) { append(m.groupValues[4]) }
-            g[6] != null -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = Color(0xFFF0F1F5), fontSize = 14.sp)) { append(m.groupValues[6]) }
+            g[6] != null -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = UserBg, fontSize = 14.sp)) { append(m.groupValues[6]) }
             else -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(m.groupValues[7]) }
         }
         i = m.range.last + 1
@@ -176,19 +176,19 @@ fun MdText(text: String, modifier: Modifier = Modifier, size: Int = 16) {
                     )
                     is Block.Bullet -> Row(Modifier.padding(start = (b.level * 18).dp, bottom = 8.dp)) {
                         if (b.marker == null) {
-                            Box(Modifier.padding(start = 6.dp, top = 11.dp, end = 10.dp).size(6.dp).clip(CircleShape).background(Color(0xFFB4B6C0)))
+                            Box(Modifier.padding(start = 6.dp, top = 11.dp, end = 10.dp).size(6.dp).clip(CircleShape).background(ChevC))
                         } else {
-                            Text(b.marker, fontSize = size.sp, color = Color(0xFF7A7D89), modifier = Modifier.padding(end = 8.dp))
+                            Text(b.marker, fontSize = size.sp, color = Mut, modifier = Modifier.padding(end = 8.dp))
                         }
                         Text(inline(b.t), fontSize = size.sp, lineHeight = lh)
                     }
                     is Block.Quote -> Row(Modifier.padding(bottom = 10.dp).height(IntrinsicSize.Min)) {
-                        Box(Modifier.width(3.dp).fillMaxHeight().background(Color(0xFFD5D7DF)))
+                        Box(Modifier.width(3.dp).fillMaxHeight().background(LineC))
                         Column(Modifier.padding(start = 12.dp)) {
-                            b.lines.forEach { Text(inline(it), fontSize = (size - 1).sp, lineHeight = lh, color = Color(0xFF4A4C57)) }
+                            b.lines.forEach { Text(inline(it), fontSize = (size - 1).sp, lineHeight = lh, color = QuoteC) }
                         }
                     }
-                    Block.Rule -> HorizontalDivider(Modifier.padding(vertical = 10.dp), color = Color(0xFFE3E4EA))
+                    Block.Rule -> HorizontalDivider(Modifier.padding(vertical = 10.dp), color = LineC)
                     is Block.Code -> if (b.lang == "mermaid" && b.closed) MermaidBlock(b.t) else CodeBlock(b.lang, b.t)
                     is Block.Table -> TableBlock(b)
                 }
@@ -201,11 +201,11 @@ fun MdText(text: String, modifier: Modifier = Modifier, size: Int = 16) {
 private fun CodeBlock(lang: String, code: String) {
     val clip = LocalClipboardManager.current
     val ctx = LocalContext.current
-    Column(Modifier.padding(bottom = 10.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFFF3F4F8))) {
+    Column(Modifier.padding(bottom = 10.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(CodeBg)) {
         Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(lang.ifEmpty { "代码" }, fontSize = 12.sp, color = Color(0xFF8B8D98), modifier = Modifier.weight(1f))
+            Text(lang.ifEmpty { "代码" }, fontSize = 12.sp, color = Mut, modifier = Modifier.weight(1f))
             IconButton({ clip.setText(AnnotatedString(code)); Toast.makeText(ctx, "已复制", Toast.LENGTH_SHORT).show() }, Modifier.size(36.dp)) {
-                Icon(Icons.Outlined.ContentCopy, "复制", Modifier.size(17.dp), tint = Color(0xFF8B8D98))
+                Icon(Icons.Outlined.ContentCopy, "复制", Modifier.size(17.dp), tint = Mut)
             }
         }
         Text(
@@ -223,23 +223,23 @@ private fun TableBlock(t: Block.Table) {
     val ctx = LocalContext.current
     var full by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(12.dp)
-    val line = Color(0xFFE3E4EA)
+    val line = LineC
     fun copyMd() {
         val sb = StringBuilder("| " + t.header.joinToString(" | ") + " |\n|" + t.header.joinToString("|") { " --- " } + "|\n")
         t.rows.forEach { r -> sb.append("| " + r.joinToString(" | ") + " |\n") }
         clip.setText(AnnotatedString(sb.toString().trimEnd())); Toast.makeText(ctx, "已复制表格", Toast.LENGTH_SHORT).show()
     }
     Column(Modifier.padding(bottom = 12.dp).fillMaxWidth().clip(shape).border(1.dp, line, shape)) {
-        Row(Modifier.fillMaxWidth().background(Color(0xFFF7F7F9)).padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("表格", fontSize = 13.sp, color = Color(0xFF8B8D98), modifier = Modifier.weight(1f))
-            IconButton(::copyMd, Modifier.size(40.dp)) { Icon(Icons.Outlined.ContentCopy, "复制", Modifier.size(19.dp), tint = Color(0xFF6B6D78)) }
-            IconButton({ full = true }, Modifier.size(40.dp)) { Icon(Icons.Outlined.OpenInFull, "全屏", Modifier.size(19.dp), tint = Color(0xFF6B6D78)) }
+        Row(Modifier.fillMaxWidth().background(CodeBg).padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("表格", fontSize = 13.sp, color = Mut, modifier = Modifier.weight(1f))
+            IconButton(::copyMd, Modifier.size(40.dp)) { Icon(Icons.Outlined.ContentCopy, "复制", Modifier.size(19.dp), tint = IconC) }
+            IconButton({ full = true }, Modifier.size(40.dp)) { Icon(Icons.Outlined.OpenInFull, "全屏", Modifier.size(19.dp), tint = IconC) }
         }
         HorizontalDivider(color = line)
         TableGrid(t, Modifier.horizontalScroll(rememberScrollState()))
     }
     if (full) Dialog({ full = false }, DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize(), color = Color.White) {
+        Surface(Modifier.fillMaxSize(), color = Bg) {
             Column(Modifier.fillMaxSize().padding(top = 28.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 16.dp, end = 4.dp)) {
                     Text("表格", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
@@ -261,9 +261,9 @@ private fun TableGrid(t: Block.Table, modifier: Modifier) {
         val mx = maxOf(units(t.header[c]), t.rows.maxOfOrNull { r -> units(r.getOrElse(c) { "" }) } ?: 0)
         (mx * 8 + 28).coerceIn(72, 260).dp
     }
-    val line = Color(0xFFE3E4EA)
+    val line = LineC
     Column(modifier) {
-        Row(Modifier.background(Color(0xFFF7F7F9))) {
+        Row(Modifier.background(CodeBg)) {
             for (c in 0 until cols) Text(
                 inline(t.header[c]), fontWeight = FontWeight.SemiBold, fontSize = 14.sp, textAlign = t.aligns.getOrElse(c) { TextAlign.Start },
                 modifier = Modifier.width(widths[c]).padding(horizontal = 12.dp, vertical = 11.dp),

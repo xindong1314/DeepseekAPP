@@ -153,32 +153,32 @@ fun MermaidBlock(code: String) {
     var ready by remember(code) { mutableStateOf(false) }   // 图表画好之前显示占位提示
     var web by remember(code) { mutableStateOf<WebView?>(null) }
 
-    Column(Modifier.padding(bottom = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0xFFF7F7F9))) {
+    Column(Modifier.padding(bottom = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(CodeBg)) {
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Row(Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFFEDEEF2)).padding(3.dp)) {
+            Row(Modifier.clip(RoundedCornerShape(10.dp)).background(Grey).padding(3.dp)) {
                 listOf("图表", "代码").forEachIndexed { i, label ->
                     Box(
-                        Modifier.clip(RoundedCornerShape(8.dp)).background(if (tab == i) Color.White else Color.Transparent)
+                        Modifier.clip(RoundedCornerShape(8.dp)).background(if (tab == i) Bg else Color.Transparent)
                             .clickable { tab = i }.padding(horizontal = 16.dp, vertical = 6.dp),
-                    ) { Text(label, fontSize = 14.sp, color = if (tab == i) Color(0xFF16171A) else Color(0xFF8B8D98), fontWeight = if (tab == i) FontWeight.Medium else FontWeight.Normal) }
+                    ) { Text(label, fontSize = 14.sp, color = if (tab == i) Ink else Mut, fontWeight = if (tab == i) FontWeight.Medium else FontWeight.Normal) }
                 }
             }
             Spacer(Modifier.weight(1f))
             if (tab == 0) {
                 Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable { web?.let { saveWebViewPng(ctx, it) } }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.FileDownload, "保存", Modifier.size(18.dp), tint = Color(0xFF6B6D78))
-                    Spacer(Modifier.width(4.dp)); Text("保存", fontSize = 14.sp, color = Color(0xFF6B6D78))
+                    Icon(Icons.Outlined.FileDownload, "保存", Modifier.size(18.dp), tint = IconC)
+                    Spacer(Modifier.width(4.dp)); Text("保存", fontSize = 14.sp, color = IconC)
                 }
                 Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable { full = true }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.OpenInFull, "全屏", Modifier.size(18.dp), tint = Color(0xFF6B6D78))
-                    Spacer(Modifier.width(4.dp)); Text("全屏", fontSize = 14.sp, color = Color(0xFF6B6D78))
+                    Icon(Icons.Outlined.OpenInFull, "全屏", Modifier.size(18.dp), tint = IconC)
+                    Spacer(Modifier.width(4.dp)); Text("全屏", fontSize = 14.sp, color = IconC)
                 }
             }
         }
         if (tab == 0) {
-            Box(Modifier.fillMaxWidth().height(heightDp.coerceIn(120, 600).dp)) {
+            Box(Modifier.fillMaxWidth().height(heightDp.coerceIn(120, 600).dp).background(Color(0xFFF7F7F9))) {
                 MermaidWebView(code, false, Modifier.fillMaxSize(), onHeight = { heightDp = it + 8; ready = true }, onView = { web = it })
-                if (!ready) Text("图表渲染中…", fontSize = 14.sp, color = Color(0xFF8B8D98), modifier = Modifier.align(Alignment.Center))
+                if (!ready) Text("图表渲染中…", fontSize = 14.sp, color = Mut, modifier = Modifier.align(Alignment.Center))
                 Box(Modifier.fillMaxSize().clickable { full = true })   // 盖一层透明层:点击进全屏,拖动仍交给列表滚动
             }
         } else {
@@ -196,14 +196,14 @@ private fun MermaidFullscreen(code: String, onClose: () -> Unit) {
     val ctx = LocalContext.current
     var web by remember { mutableStateOf<WebView?>(null) }
     Dialog(onClose, DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize(), color = Color.White) {
+        Surface(Modifier.fillMaxSize(), color = Bg) {
             Column(Modifier.fillMaxSize().padding(top = 28.dp)) {
                 Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("图表(双指缩放、拖动查看)", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                     IconButton({ web?.let { saveWebViewPng(ctx, it) } }) { Icon(Icons.Outlined.FileDownload, "保存") }
                     IconButton(onClose) { Icon(Icons.Outlined.Close, "关闭") }
                 }
-                MermaidWebView(code, true, Modifier.weight(1f).fillMaxWidth(), onView = { web = it })
+                MermaidWebView(code, true, Modifier.weight(1f).fillMaxWidth().background(Color.White), onView = { web = it })
             }
         }
     }

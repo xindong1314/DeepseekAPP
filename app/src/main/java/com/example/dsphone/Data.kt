@@ -136,6 +136,7 @@ class Settings(ctx: Context) {
     var bgColor by mutableIntStateOf(sp.getInt("bgColor", 0))
     var bgDim by mutableIntStateOf(sp.getInt("bgDim", 35))
     var bgVersion by mutableIntStateOf(0)
+    var themeMode by mutableStateOf(sp.getString("theme", "system") ?: "system")   // system | light | dark
 
     // 服务商:deepseek(官方)或 custom(任意 OpenAI 兼容接口,如 OpenCode Go)
     var provider by mutableStateOf(sp.getString("provider", "deepseek") ?: "deepseek")
@@ -170,7 +171,7 @@ class Settings(ctx: Context) {
         sp.edit().putString("key", apiKey).putString("model", model).putBoolean("think", think)
             .putString("effort", effort).putBoolean("web", web).putBoolean("speak", speak)
             .putString("bgType", bgType).putInt("bgColor", bgColor).putInt("bgDim", bgDim)
-            .putString("provider", provider).putString("customUrl", customUrl)
+            .putString("theme", themeMode).putString("provider", provider).putString("customUrl", customUrl)
             .putString("customKey", customKey).putString("customModel", customModel)
             .putString("customModelName", customModelName).putBoolean("customVision", customVision)
             .putString("searchServices", JSONArray().also { a -> searchServices.forEach { a.put(it.toJson()) } }.toString())
