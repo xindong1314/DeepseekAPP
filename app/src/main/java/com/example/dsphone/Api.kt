@@ -77,7 +77,7 @@ object Api {
     ): StreamResult = withContext(Dispatchers.IO) {
         val req = Request.Builder().url("$base/chat/completions")
             .header("Authorization", "Bearer $key")
-            .apply { if (session != null) header("x-opencode-session", session).header("User-Agent", "DeepseekAPP/1.3.1") }
+            .apply { if (session != null) header("x-opencode-session", session).header("User-Agent", "DeepseekAPP/1.4.0") }
             .post(body.toString().toRequestBody(JSON)).build()
         val call = http.newCall(req)
         val handle = currentCoroutineContext()[Job]?.invokeOnCompletion { call.cancel() }
